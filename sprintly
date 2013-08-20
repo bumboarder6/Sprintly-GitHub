@@ -117,26 +117,27 @@ class SprintlyTool:
                           '\n\nThe hook will automatically prepend the keyword \'references\' and you won\'t be asked to provide an item number. This shortcut only works at the beginning of the message and does not support multiple item numbers.'
             parser = ArgumentParser(description=description)
             subparsers = parser.add_subparsers(dest='action_name')
-            install_p = subparsers.add_parser('install', help='install this tool')
+            install_p = subparsers.add_parser('install', help='install this tool.')
             install_p.set_defaults(func=self._installAndInit)
 
-            update_p = subparsers.add_parser('update', help='update this tool')
+            update_p = subparsers.add_parser('update', help='update this tool.')
             update_p.set_defaults(func=self._updateAndInit)
 
-            update_config_p = subparsers.add_parser('update-config', help='edit configuration')
+            update_config_p = subparsers.add_parser('update-config', help='edit configuration.')
             update_config_p.set_defaults(func=self._initAndUpdateConfig)
 
             users_p = subparsers.add_parser('users', help='Get/set user information. Lists users by default.')
             users_p.set_defaults(func=self._users_action)
+            users_p.add_argument('-p', '--product', action='store_true', help='List users by the product they work on.')
 
             users_p_arg_group = users_p.add_mutually_exclusive_group()
-            users_p_arg_group.add_argument('-l', '--list', action='store_true', help='List users')
+            users_p_arg_group.add_argument('-l', '--list', action='store_true', help='List users.')
 
             items_p = subparsers.add_parser('items', help='Perform actions on items. Lists items by default.')
             items_p.set_defaults(func=self._items_action)
             items_p.add_argument('-u', '--user', type=int, default=None, help='Specify a user (by user ID). Defaults to you.')
             items_p_arg_group = items_p.add_mutually_exclusive_group()
-            items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items')
+            items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
             
             
             # parser.add_option('--install', dest='install', help='install this tool', action='store_true', default=False)
@@ -178,7 +179,7 @@ class SprintlyTool:
         self.initialize()
         
         # default to listing users
-        self.listSprintlyUsers()
+        self.listSprintlyUsers(args.product)
 
     def _items_action(self, args=None):
         self.initialize()
@@ -403,34 +404,35 @@ class SprintlyTool:
         """
         Lists all Sprint.ly users by product.
         """
-        data = self.getSprintlyData(False, True, 1000)
-        products = data['products']
-        self.printUsers(data, products if byProducts else None)
-
-    def printUsers(self, data, products = None):
-        """
-        If given products, print users by product. Otherwise, print all users w/of
-        listing products.
-        """
-        if not products:
+        data = self.getSprintlyUsers(byProducts)
+        if not byProducts:
             self.printUserArray(data)
             return
-        
-        # for product_id in status:
-        #         items = status[product_id]
-        #         name = items[0]['product']['name']
-        #         productId = str(items[0]['product']['id'])
-        #         printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
-        #         self.cprint(printProduct)
+        self.printUsersByProducts(data)
 
-    def printUserArray(self, data):
+    def printUsersByProducts(self, products):
+        """
+        List users by the product they work on.
+        """
+        for product in products:
+            users = product['users']
+            productId = str(product['id'])
+            productName = product['name']
+            printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + productName + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
+            self.cprint(printProduct)
+            
+            for user in users:
+                printUser = '${NORMAL}  ' + str(user['id']) + ': ${BOLD}${LIGHT_BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
+                self.cprint(printUser)
+        self.cprint('')
+
+    def printUserArray(self, users):
         """
         List all users from all products.
         """
-        users = data['users']
         for user_id in users:
             user = users[user_id]
-            printUser = '${NORMAL}' + str(user_id) + ': ${BOLD}${BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
+            printUser = '${NORMAL}' + str(user['id']) + ': ${BOLD}${LIGHT_BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
             self.cprint(printUser)
         self.cprint('')
 
@@ -438,16 +440,13 @@ class SprintlyTool:
         """
         Lists all items for the current user from the Sprint.ly API.
         """
-        data = self.getSprintlyData(True, True, 1000)
-        self.printItems(data['products'])
+        data = self.getSprintlyItems(user_id, 1000)
+        self.printItems(data)
 
-    def printItems(self, products, user_id = None):
+    def printItems(self, products):
         """
         Print a list of Sprint.ly items.
         """
-        
-        if user_id == None:
-            user_id = self._config['id']
         
         statusTree = {
             'backlog': {},
@@ -497,119 +496,151 @@ class SprintlyTool:
 
             self.cprint('')
 
-    def getSprintlyData(self, getItems=True, getUsers=True, limit=100):
+    def getSprintlyItems(self, userId=None, limit=100):
         """
-        TODO return all data from sprintly will be refactored and cleaned up soon
+        Get all Sprint.ly items. By default gets them for local user, but can
+        also retrieve for other users when given a user ID.
         """
-        data = {
-            'products': [],
-            'users': {}
-        }
-
+        
+        if not userId:
+            userId = self._config['id']
+        
+        data = []
+        products = []
+        
         try:
-            
-            users = {}
-            products = []
-
             # use product from config file
             products.append(self._config['product'])
-
+            
             # get products from the API
             # products = self.sprintlyAPICall('products.json')
             # if not products:
             #   raise SprintlyException('Unable to get product list.')
-
+            
             # iterate over products
             for product in products:
                 
                 productName = product['name']
                 productId = str(product['id'])
-                productNameWithUrl = '\'' + productName + '\' (https://sprint.ly/product/' + productId + '/)'
                 
-                # grab users
-                if getUsers:
-                    product['users'] = self.sprintlyAPICall('products/' + productId + '/people.json')
-                    
-                    # iterate over users adding to global user array
-                    for user in product['users']:
-                        users[user['id']] = user
+                items = []
+                offset = 0
+                while True:
+                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
+
+                    # if we get nothing, an empty list, an error, quit
+                    if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
+                        break
+                    # otherwise, add on these items and increase the offset
+                    else:
+                        items = items + itemsPartial
+                        offset = offset + limit
+
+                    # if we got less than a full response, no need to check again
+                    if len(itemsPartial) < limit:
+                        break
+
+                # if anything went wrong, print an error message
+                if 'code' in items:
+                    # include message if applicable
+                    message = ''
+                    if 'message' in items:
+                        message = ': %s' % items['message']
+                    productNameWithUrl = '\'' + productName + '\' (https://sprint.ly/product/' + productId + '/)'
+                    print 'Warning: unable to get items for %s%s' % (productNameWithUrl, message)
+                    continue
+                # if there are no items, display message
+                elif len(items) == 0:
+                    productNameWithUrl = '\'' + productName + '\' (https://sprint.ly/product/' + productId + '/)'
+                    print 'No assigned items for %s' % (productNameWithUrl)
+                # a 'parent' is any item without a parent key
+                # a 'child' is any item with a parent key
+                # sort so that all parents appear first and all children appear after ordered by their number
+                items.sort(key=lambda item: item['number'] if 'parent' in item else sys.maxint, reverse=True)
+
+                # turn flat list into tree
+                itemsTree = []
+                parentMapping = {} # allow parents to be looked up by number
+
+                for item in items:
+                    number = str(item['number'])
+
+                    # if item is not a child
+                    if 'parent' not in item:
+                        itemsTree.append(item)
+                        parentMapping[number] = item
+
+                    # if item is a child...
+                    else:
+                        parent = item['parent']  # get reference to parent
+                        del item['parent']  # remove parent from child
+                        parentNumber = str(parent['number'])
+
+                        # if we have the parent, nest under parent
+                        if parentNumber in parentMapping:
+
+                            # we sorted items above to ensure all parents will be in map before any child is encountered
+                            parent = parentMapping[parentNumber]
+                            if 'children' not in parent:
+                                parent['children'] = []
+                            parent['children'].append(item)
+
+                        # if we don't have the parent, add placeholder parent to preserve tree structure
+                        else:
+                            parent['children'] = [item]
+                            parentMapping[parentNumber] = parent
+                            itemsTree.append(parent)
+
+                # sort items by (status, then first child, if it exists, else number)
+                itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
+                product['items'] = itemsTree
                 
-                if getItems:
-                    # get all items assigned to all users
-                    items = []
-                    offset = 0
-                    while True:
-                        itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(self._config['id']) + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
-
-                        # if we get nothing, an empty list, an error, quit
-                        if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
-                            break
-                        # otherwise, add on these items and increase the offset
-                        else:
-                            items = items + itemsPartial
-                            offset = offset + limit
-
-                        # if we got less than a full response, no need to check again
-                        if len(itemsPartial) < limit:
-                            break
-
-                    # if anything went wrong, print an error message
-                    if 'code' in items:
-                        # include message if applicable
-                        message = ''
-                        if 'message' in items:
-                            message = ': %s' % items['message']
-                        print 'Warning: unable to get items for %s%s' % (productNameWithUrl, message)
-                        continue
-                    # if there are no items, display message
-                    elif len(items) == 0:
-                        print 'No assigned items for %s' % (productNameWithUrl)
-                    # a 'parent' is any item without a parent key
-                    # a 'child' is any item with a parent key
-                    # sort so that all parents appear first and all children appear after ordered by their number
-                    items.sort(key=lambda item: item['number'] if 'parent' in item else sys.maxint, reverse=True)
-
-                    # turn flat list into tree
-                    itemsTree = []
-                    parentMapping = {} # allow parents to be looked up by number
-
-                    for item in items:
-                        number = str(item['number'])
-
-                        # if item is not a child
-                        if 'parent' not in item:
-                            itemsTree.append(item)
-                            parentMapping[number] = item
-
-                        # if item is a child...
-                        else:
-                            parent = item['parent']  # get reference to parent
-                            del item['parent']  # remove parent from child
-                            parentNumber = str(parent['number'])
-
-                            # if we have the parent, nest under parent
-                            if parentNumber in parentMapping:
-
-                                # we sorted items above to ensure all parents will be in map before any child is encountered
-                                parent = parentMapping[parentNumber]
-                                if 'children' not in parent:
-                                    parent['children'] = []
-                                parent['children'].append(item)
-
-                            # if we don't have the parent, add placeholder parent to preserve tree structure
-                            else:
-                                parent['children'] = [item]
-                                parentMapping[parentNumber] = parent
-                                itemsTree.append(parent)
-
-                    # sort items by (status, then first child, if it exists, else number)
-                    itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
-                    product['items'] = itemsTree
-                    
-                    data['products'].append(product)
-
-            data['users'] = users
+                data.append(product)
+            
             return data
+        except Exception as ex:
+            print '\033[91m'
+            print 'Unable to get sprintly data. (exception: ' + str(ex) + ')'
+            print '\033[0m'
+            return None
+
+    def getSprintlyUsers(self, byProducts=False):
+        """
+        Get all Sprint.ly users.
+        
+        If byProducts == True, returns an array of
+        products: [{name:string, id:number, users:[]}, ...]
+        
+        If byProducts == False, returns an assoc array of
+        users: {<user_id>: {admin: bool, first_name: string, last_name: string,
+                 id: number, email: string}, ...}
+        """
+        try:
+            products = []
+            users = {}
+            
+            # use product from config file
+            products.append(self._config['product'])
+            
+            # get products from the API
+            # products = self.sprintlyAPICall('products.json')
+            # if not products:
+            #   raise SprintlyException('Unable to get product list.')
+            
+            # iterate over products
+            for product in products:
+                productName = product['name']
+                productId = str(product['id'])
+                product['users'] = self.sprintlyAPICall('products/' + productId + '/people.json')
+                
+                # iterate over users adding to global user array
+                for user in product['users']:
+                    users[user['id']] = user
+            
+            if byProducts:
+                return products
+            return users
+            
         except Exception as ex:
             print '\033[91m'
             print 'Unable to get sprintly data. (exception: ' + str(ex) + ')'
