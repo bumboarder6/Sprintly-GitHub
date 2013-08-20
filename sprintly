@@ -13,7 +13,7 @@ import string
 import logging
 from curses import setupterm, tigetstr, tigetnum, tparm
 from time import time
-from optparse import OptionParser
+from argparse import ArgumentParser
 
 # force utf-8 encoding
 reload(sys)
@@ -28,8 +28,8 @@ SPRINTLY_NAME = 'sprintly'
 SPRINTLY_DIR = '/usr/local/bin/'
 HOOK_NAME = 'commit-msg'
 HOOK_DIR = '/usr/local/share/sprintly/'
-SPRINTLY_SOURCE_URL = 'https://raw.github.com/nextbigsoundinc/Sprintly-GitHub/master/sprintly'
-COMMIT_MSG_SOURCE_URL = 'https://raw.github.com/nextbigsoundinc/Sprintly-GitHub/master/commit-msg'
+SPRINTLY_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/sprintly'
+COMMIT_MSG_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/commit-msg'
 
 # non-editable constants
 SPRINTLY_PATH = SPRINTLY_DIR + SPRINTLY_NAME
@@ -60,6 +60,17 @@ ITEM_STATUSES = {
     'completed': "Completed",
     'accepted': "Accepted",
 }
+
+def enum(**enums):
+    return type('Enum', (), enums)
+
+CACHE = enum(USERS=1, ITEMS=2, ALL=3)
+
+def grab_users(limit):
+    return True #return limit == CACHE.ALL or limit == CACHE.USERS
+
+def grab_items(limit):
+    return True #return limit == CACHE.ALL or limit == CACHE.ITEMS
 
 class SprintlyTool:
     """
@@ -100,6 +111,9 @@ class SprintlyTool:
         self._sprintlyDirectoryPath = None
         self._sprintlyConfigPath = None
         self._sprintlyCachePath = None
+        
+        self._cache = {'products': None,
+                       'users': None}
 
     def run(self, scr=None):
         """
@@ -107,42 +121,98 @@ class SprintlyTool:
         """
 
         try:
-            usage = 'Usage: %prog [options]\n\nBy default, your Sprint.ly items will be shown.\n\nWhen using the commit-msg hook, you will be prompted for a Sprint.ly item number unless you include a Sprint.ly keyword/item number in your commit message:\n\n  \'Commit message goes here. References #54. Closes #65.\'\n\nValid Sprint.ly keywords are:\n\n  close, closes, closed, fix, fixed, fixes, addresses, re, ref, refs, references, see, breaks, unfixes, reopen, reopens, re-open, re-opens\n\nAs a shortcut, you may also include an item number as the first word in your commit message:\n\n  \'#26 Message goes here\'\n\nThe hook will automatically prepend the keyword \'references\' and you won\'t be asked to provide an item number. This shortcut only works at the beginning of the message and does not support multiple item numbers.'
-            parser = OptionParser(usage=usage)
-            parser.add_option('--install', dest='install', help='install this tool', action='store_true', default=False)
-            parser.add_option('--update', dest='update', help='update this tool', action='store_true', default=False)
-            parser.add_option('--install-hook', dest='installHook', help='install commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
-            parser.add_option('--uninstall-hook', dest='uninstallHook', help='uninstall commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
-            parser.add_option('--update-config', dest='updateConfig', help='edit configuration', action='store_true', default=False)
-
-            (options, _) = parser.parse_args()
-
-            # if the user wants to install, do it before we initialize (they will re-run once installed)
-            if options.install or options.update:
-                try:
-                    self.install(options.update)
-                except SprintlyException as se:
-                    type = 'install'
-                    if options.update:
-                        type = 'update'
-                    self.cprint('Unable to %s. Try running again with sudo.' % (type), attr=RED)
+            if len(sys.argv) == 1:
+                self._items_action()
                 return
+            
+            description = 'By default, your Sprint.ly items will be shown.'\
+                          '\n\nWhen using the commit-msg hook, you will be prompted for a Sprint.ly item number unless you include a Sprint.ly keyword/item number in your commit message:'\
+                          '\n\n  \'Commit message goes here. References #54. Closes #65.\''\
+                          '\n\nValid Sprint.ly keywords are:'\
+                          '\n\n  close, closes, closed, fix, fixed, fixes, addresses, re, ref, refs, references, see, breaks, unfixes, reopen, reopens, re-open, re-opens'\
+                          '\n\nAs a shortcut, you may also include an item number as the first word in your commit message:'\
+                          '\n\n  \'#26 Message goes here\''\
+                          '\n\nThe hook will automatically prepend the keyword \'references\' and you won\'t be asked to provide an item number. This shortcut only works at the beginning of the message and does not support multiple item numbers.'
+            parser = ArgumentParser(description=description)
+            subparsers = parser.add_subparsers(dest='action_name')
+            install_p = subparsers.add_parser('install', help='install this tool')
+            install_p.set_defaults(func=self._installAndInit)
+            update_p = subparsers.add_parser('update', help='update this tool')
+            update_p.set_defaults(func=self._updateAndInit)
+            install_hook_p = subparsers.add_parser('install-hook', help='install commit-msg hook in current directory (must be a git repository)')
+            install_hook_p.set_defaults(func=self._initAndInstallHook)
+            uninstall_hook_p = subparsers.add_parser('uninstall-hook', help='uninstall commit-msg hook in current directory (must be a git repository)')
+            uninstall_hook_p.set_defaults(func=self._initAndUninstallHook)
+            update_config_p = subparsers.add_parser('update-config', help='edit configuration')
+            update_config_p.set_defaults(func=self._initAndUpdateConfig)
+            users_p = subparsers.add_parser('users', help='Get/set user information. Lists users by default.')
+            users_p.set_defaults(func=self._users_action)
+            users_p_arg_group = users_p.add_mutually_exclusive_group()
+            users_p_arg_group.add_argument('-l', '--list', action='store_true', help='List users')
+            items_p = subparsers.add_parser('items', help='Perform actions on items. Lists items by default.')
+            items_p.set_defaults(func=self._items_action)
+            items_p_arg_group = items_p.add_mutually_exclusive_group()
+            items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items')
+            items_p_arg_group.add_argument('-u', '--user', type=int, default=None, help='Specify a user (by user ID). Defaults to you.')
+            
+            # parser.add_option('--install', dest='install', help='install this tool', action='store_true', default=False)
+            # parser.add_option('--update', dest='update', help='update this tool', action='store_true', default=False)
+            # parser.add_option('--install-hook', dest='installHook', help='install commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
+            # parser.add_option('--uninstall-hook', dest='uninstallHook', help='uninstall commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
+            # parser.add_option('--update-config', dest='updateConfig', help='edit configuration', action='store_true', default=False)
 
-            # ensure that the ~/.sprintly/ folder exists, we have credentials, etc
-            self.initialize()
-
-            # run the requested option (note: install/update are handled above)
-            if options.installHook:
-                self.installHook()
-            elif options.uninstallHook:
-                self.uninstallHook()
-            elif options.updateConfig:
-                self.updateConfig()
-            else:
-                self.listSprintlyItems()
+            args = parser.parse_args()
+            args.func(args)
 
         except Exception as e:
             die('Fatal Error: %s', e)
+
+    def _initAndInstallHook(self, args):
+        self.initialize();
+        self.installHook();
+
+    def _initAndUninstallHook(self, args):
+        self.initialize()
+        self.uninstallHook()
+
+    def _initAndUpdateConfig(self, args):
+        self.initialize()
+        self.updateConfig()
+
+    def _installAndInit(self, args):
+        self._installOrUpdateAndInit(False)
+
+    def _updateAndInit(self, args):
+        self._installOrUpdateAndInit(True)
+
+    def _installOrUpdateAndInit(self, update):
+        try:
+            self.install(update)
+        except SprintlyException as se:
+            type = 'install'
+            if update:
+                type = 'update'
+            self.cprint('Unable to %s. Try running again with sudo.' % (type), attr=RED)
+        return
+        
+        # ensure that the ~/.sprintly/ folder exists, we have credentials, etc
+        self.initialize()
+
+    def _users_action(self, args):
+        self.initialize()
+        
+        # default to listing users
+        self.listSprintlyUsers()
+
+    def _items_action(self, args=None):
+        self.initialize()
+        if args:
+            #default is to list items
+            self.listSprintlyItems(args.user)
+            return
+        
+        # default action, list this user's items:
+        self.listSprintlyItems()
 
     def install(self, update):
         """
@@ -364,22 +434,60 @@ class SprintlyTool:
         """
         self.createSprintlyConfig(True)
 
-    def listSprintlyItems(self):
+    def listSprintlyUsers(self, byProducts=False):
+        """
+        Lists all Sprint.ly users by product.
+        """
+        self.populateCache(CACHE.ALL if byProducts else CACHE.USERS)
+        products = self.readCache()['products']
+        self.printUsers(products if byProducts else None)
+
+    def printUsers(self, products = None):
+        """
+        If given products, print users by product. Otherwise, print all users w/of
+        listing products.
+        """
+        if not products:
+            self.printUserArray()
+            return
+        
+        # for product_id in status:
+        #         items = status[product_id]
+        #         name = items[0]['product']['name']
+        #         productId = str(items[0]['product']['id'])
+        #         printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
+        #         self.cprint(printProduct)
+
+    def printUserArray(self):
+        """
+        List all users from all products.
+        """
+        users = self.readCache()['users']
+        for user_id in users:
+            user = users[user_id]
+            printUser = '${NORMAL}' + user_id + ': ${BOLD}${BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
+            self.cprint(printUser)
+        self.cprint('')
+
+    def listSprintlyItems(self, user_id = None):
         """
         Lists all items for the current user from the Sprint.ly API.
         """
 
         # populate the cache from the API if possible (may not be possible,
         # e.g. in the case of offline access)
-        self.populateCache()
-        products = self.readCache()
-        self.printList(products)
+        self.populateCache(CACHE.ITEMS)
+        products = self.readCache()['products']
+        self.printItems(products)
 
-    def printList(self, products):
+    def printItems(self, products, user_id = None):
         """
         Print a list of Sprint.ly items.
         """
-
+        
+        if user_id == None:
+            user_id = self._config['id']
+        
         statusTree = {
             'backlog': {},
             'in-progress': {},
@@ -428,7 +536,7 @@ class SprintlyTool:
 
             self.cprint('')
 
-    def populateCache(self):
+    def populateCache(self, limit=CACHE.ALL):
         """
         Populate the cache from the Sprint.ly API if possible.
         """
@@ -439,6 +547,7 @@ class SprintlyTool:
             cache['updated_at'] = time()
             cache['products'] = []
 
+            users = {}
             products = []
 
             # use product from config file
@@ -451,109 +560,128 @@ class SprintlyTool:
 
             # iterate over products
             for product in products:
-
+                
                 productName = product['name']
                 productId = str(product['id'])
                 productNameWithUrl = '\'' + productName + '\' (https://sprint.ly/product/' + productId + '/)'
+                
+                # grab users
+                if grab_users(limit):
+                    product['users'] = self.sprintlyAPICall('products/' + productId + '/people.json')
+                    
+                    # iterate over users adding to global user array
+                    for user in product['users']:
+                        users[user['id']] = user
+                
+                if grab_items(limit):
+                    # get all items assigned to all users
+                    items = []
+                    offset = 0
+                    limit = 100
+                    while True:
+                        itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(self._config['id']) + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
 
-                # get all items assigned to current user
-                items = []
-                offset = 0
-                limit = 100
-                while True:
-                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(self._config['id']) + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
-
-                    # if we get nothing, an empty list, an error, quit
-                    if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
-                        break
-                    # otherwise, add on these items and increase the offset
-                    else:
-                        items = items + itemsPartial
-                        offset = offset + limit
-
-                    # if we got less than a full response, no need to check again
-                    if len(itemsPartial) < limit:
-                        break
-
-                # if anything went wrong, print an error message
-                if 'code' in items:
-                    # include message if applicable
-                    message = ''
-                    if 'message' in items:
-                        message = ': %s' % items['message']
-                    print 'Warning: unable to get items for %s%s' % (productNameWithUrl, message)
-                    continue
-                # if there are no items, display message
-                elif len(items) == 0:
-                    print 'No assigned items for %s' % (productNameWithUrl)
-                # a 'parent' is any item without a parent key
-                # a 'child' is any item with a parent key
-                # sort so that all parents appear first and all children appear after ordered by their number
-                items.sort(key=lambda item: item['number'] if 'parent' in item else sys.maxint, reverse=True)
-
-                # turn flat list into tree
-                itemsTree = []
-                parentMapping = {} # allow parents to be looked up by number
-
-                for item in items:
-                    number = str(item['number'])
-
-                    # if item is not a child
-                    if 'parent' not in item:
-                        itemsTree.append(item)
-                        parentMapping[number] = item
-
-                    # if item is a child...
-                    else:
-                        parent = item['parent']  # get reference to parent
-                        del item['parent']  # remove parent from child
-                        parentNumber = str(parent['number'])
-
-                        # if we have the parent, nest under parent
-                        if parentNumber in parentMapping:
-
-                            # we sorted items above to ensure all parents will be in map before any child is encountered
-                            parent = parentMapping[parentNumber]
-                            if 'children' not in parent:
-                                parent['children'] = []
-                            parent['children'].append(item)
-
-                        # if we don't have the parent, add placeholder parent to preserve tree structure
+                        # if we get nothing, an empty list, an error, quit
+                        if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
+                            break
+                        # otherwise, add on these items and increase the offset
                         else:
-                            parent['children'] = [item]
-                            parentMapping[parentNumber] = parent
-                            itemsTree.append(parent)
+                            items = items + itemsPartial
+                            offset = offset + limit
 
-                # sort items by (status, then first child, if it exists, else number)
-                itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
-                product['items'] = itemsTree
-                cache['products'].append(product)
+                        # if we got less than a full response, no need to check again
+                        if len(itemsPartial) < limit:
+                            break
 
-            serialized_cache = json.dumps(cache)
+                    # if anything went wrong, print an error message
+                    if 'code' in items:
+                        # include message if applicable
+                        message = ''
+                        if 'message' in items:
+                            message = ': %s' % items['message']
+                        print 'Warning: unable to get items for %s%s' % (productNameWithUrl, message)
+                        continue
+                    # if there are no items, display message
+                    elif len(items) == 0:
+                        print 'No assigned items for %s' % (productNameWithUrl)
+                    # a 'parent' is any item without a parent key
+                    # a 'child' is any item with a parent key
+                    # sort so that all parents appear first and all children appear after ordered by their number
+                    items.sort(key=lambda item: item['number'] if 'parent' in item else sys.maxint, reverse=True)
+
+                    # turn flat list into tree
+                    itemsTree = []
+                    parentMapping = {} # allow parents to be looked up by number
+
+                    for item in items:
+                        number = str(item['number'])
+
+                        # if item is not a child
+                        if 'parent' not in item:
+                            itemsTree.append(item)
+                            parentMapping[number] = item
+
+                        # if item is a child...
+                        else:
+                            parent = item['parent']  # get reference to parent
+                            del item['parent']  # remove parent from child
+                            parentNumber = str(parent['number'])
+
+                            # if we have the parent, nest under parent
+                            if parentNumber in parentMapping:
+
+                                # we sorted items above to ensure all parents will be in map before any child is encountered
+                                parent = parentMapping[parentNumber]
+                                if 'children' not in parent:
+                                    parent['children'] = []
+                                parent['children'].append(item)
+
+                            # if we don't have the parent, add placeholder parent to preserve tree structure
+                            else:
+                                parent['children'] = [item]
+                                parentMapping[parentNumber] = parent
+                                itemsTree.append(parent)
+
+                    # sort items by (status, then first child, if it exists, else number)
+                    itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
+                    product['items'] = itemsTree
+                    
+                    cache['products'].append(product)
+
+            cache['users'] = users
+            
+            if grab_items(limit):
+                print 'here'
+                self._cache['products'] = cache['products']
+            if grab_users(limit):
+                self._cache['users'] = cache['users']
+            
+            serialized_cache = json.dumps(self._cache)
 
             cache_file = open(self._sprintlyCachePath, 'w')
             cache_file.write(serialized_cache)
             cache_file.close()
-        except Exception:
+        except Exception as ex:
             print '\033[91m'
-            print 'Unable to populate cache. List may not be up to date.'
+            print 'Unable to populate cache. List may not be up to date. (exception: ' + str(ex) + ')'
             print '\033[0m'
 
     def readCache(self):
         """
         Read from the cache and return a list of Sprint.ly items.
         """
+        
+        if self._cache['products'] == None or self._cache['users'] == None:
+            cache_file = open(self._sprintlyCachePath, 'r')
+            serialized_cache = cache_file.readline()
+            cache_file.close()
 
-        cache_file = open(self._sprintlyCachePath, 'r')
-        serialized_cache = cache_file.readline()
-        cache_file.close()
+            try:
+                self._cache = json.loads(serialized_cache)
+            except Exception:
+                raise SprintlyException('Cache is empty or invalid. Please try running the tool again.')
 
-        try:
-            cache = json.loads(serialized_cache)
-        except Exception:
-            raise SprintlyException('Cache is empty or invalid. Please try running the tool again.')
-
-        return cache['products']
+        return self._cache
 
     def sprintlyAPICall(self, url):
         """
