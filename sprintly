@@ -1,16 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import sys
-import os
-import locale
-import urllib2
-import json
-import shutil
-import subprocess
-import re
-import string
-import logging
+import sys, os, locale, urllib, urllib2, json, subprocess, re, string, logging
 from curses import setupterm, tigetstr, tigetnum, tparm
 from time import time
 from argparse import ArgumentParser
@@ -57,6 +48,14 @@ ITEM_STATUSES = {
     'accepted': "Accepted",
 }
 
+SCORES = {
+    '~': 'No Score',
+    'S': 'Small Matter',
+    'M': 'Eh Kinda Hard',
+    'L': 'Breakin a sweat',
+    'XL': 'WTF'
+}
+
 class SprintlyTool:
     """
     A command line tool for displaying your stories, tasks, tests, and defects
@@ -95,7 +94,7 @@ class SprintlyTool:
         self._config = {}
         self._sprintlyDirectoryPath = None
         self._sprintlyConfigPath = None
-                
+        self.parser = None
 
     def run(self, scr=None):
         """
@@ -141,13 +140,19 @@ class SprintlyTool:
             items_p_arg_group = items_p.add_mutually_exclusive_group()
             items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
             
-            
-            # parser.add_option('--install', dest='install', help='install this tool', action='store_true', default=False)
-            # parser.add_option('--update', dest='update', help='update this tool', action='store_true', default=False)
-            # parser.add_option('--install-hook', dest='installHook', help='install commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
-            # parser.add_option('--uninstall-hook', dest='uninstallHook', help='uninstall commit-msg hook in current directory (must be a git repository)', action='store_true', default=False)
-            # parser.add_option('--update-config', dest='updateConfig', help='edit configuration', action='store_true', default=False)
+            item_p = subparsers.add_parser('item', help='List or Edit an item specified by id')
+            item_p.set_defaults(func=self._item_action)
+            item_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to list or edit')
+            item_p.add_argument('-s', '--status', type=str, help='The new status to set this item to, one of: ' + ', '.join(ITEM_STATUSES.keys()))
+            item_p.add_argument('-z', '--size', type=str, help='The approximate size of the item can be one of: ' + ', '.join(SCORES.keys()))
+            item_p.add_argument('-t', '--title', type=str, help='The new title to set for this item')
+            item_p.add_argument('-u', '--user', type=int, help='The User ID to assign this item to')
+            item_p.add_argument('-d', '--description', type=str, help='The new description of the item')
+            item_p.add_argument('-g', '--tags', type=str, help='comma delimited tags to attach to the item')
+            item_p.add_argument('-p', '--parent', type=int, help='The parent story to add this to')
+            item_p.add_argument('-r', '--remove', action='store_true', help='REMOVES THE ITEM')
 
+            self.parser = parser
             args = parser.parse_args()
             args.func(args)
 
@@ -192,6 +197,64 @@ class SprintlyTool:
         
         # default action, list this user's items:
         self.listSprintlyItems()
+
+    def _item_action(self, args):
+        self.initialize()
+        pid = str(self._config['product']['id'])
+
+        if args.remove:
+            print self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json', delete=True)
+            return
+
+        updates = []
+        if args.status:
+            if args.status not in ITEM_STATUSES.keys():
+                self.parser.print_help()
+                return
+            updates.append(('status', args.status))
+
+        if args.size:
+            if args.size not in SCORES.keys():
+                self.parser.print_help()
+                return
+            updates.append(('score', args.size))
+
+        if args.title:
+            updates.append(('title', args.title))
+
+        if args.user:
+            updates.append(('assigned_to', args.user))
+
+        if args.description:
+            updates.append(('description', args.description))
+
+        if args.tags:
+            updates.append(('tags', args.tags))
+
+        if args.parent:
+            updates.append(('parent', args.parent))
+
+        self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json', updates)
+
+        print self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json')
+
+        # Creates new item
+        if False:
+            resp = self.sprintlyAPICall('products/' + pid + '/items.json', (
+                ('type', 'task'), 
+                ('title', 'CLI Created task'), 
+                ('description', 'This is a test of the CLI interface'), 
+                ('status', 'in-progress'), 
+                ('assigned_to', '4878'),
+                ('score', 'S'),
+                ('tags', 'some,new,tag1,tag2')
+                # who, what, why required for story
+            ))
+            print resp
+
+            #Deletes
+            #print self.sprintlyAPICall('products/' + pid + '/items/' + str(resp['number']) + '.json', delete=True)
+
 
     def install(self, update):
         """
@@ -400,7 +463,6 @@ class SprintlyTool:
         Defaults will be original config values if present.
         """
         self.createSprintlyConfig(True)
-
 
     def listSprintlyUsers(self, byProducts=False):
         """
@@ -679,20 +741,32 @@ class SprintlyTool:
             print '\033[0m'
             return None
 
-    def sprintlyAPICall(self, url):
+    def sprintlyAPICall(self, url, data=None, delete=False):
         """
         Wraps up a call to the Sprint.ly api. Returns a map representing
         the JSON response or false if the call could not be completed.
+        @param (list|tuple of 2-tuples) data - Data to be passed as post to server
+        @param (bool) delete - Whether to send as a DELETE method
         """
 
         url = 'https://sprint.ly/api/%s' % url
 
         try:
             userData = 'Basic ' + (self._config['user'] + ':' + self._config['key']).encode('base64').replace("\n",'')
-            req = urllib2.Request(url)
+            opener = urllib2.build_opener(urllib2.HTTPHandler)
+            
+            if data:
+                data = urllib.urlencode(data)
+            
+            req = urllib2.Request(url, data=data)
             req.add_header('Accept', 'application/json')
             req.add_header('Authorization', userData)
-            res = urllib2.urlopen(req)
+
+            if delete:
+                req.get_method = lambda: 'DELETE'
+
+            res = opener.open(req)
+            
             response = res.read()
             return json.loads(response)
         except urllib2.HTTPError, error:
