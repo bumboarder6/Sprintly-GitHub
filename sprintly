@@ -48,7 +48,7 @@ ITEM_STATUSES = {
     'accepted': "Accepted",
 }
 
-SCORES = {
+ITEM_SCORES = {
     '~': 'No Score',
     'S': 'Small Matter',
     'M': 'Eh Kinda Hard',
@@ -142,7 +142,7 @@ class SprintlyTool:
             item_p.set_defaults(func=self._item_action)
             item_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to list or edit')
             item_p.add_argument('-s', '--status', type=str, help='The new status to set this item to, one of: ' + ', '.join(ITEM_STATUSES.keys()))
-            item_p.add_argument('-z', '--size', type=str, help='The approximate size of the item can be one of: ' + ', '.join(SCORES.keys()))
+            item_p.add_argument('-z', '--size', type=str, help='The approximate size of the item can be one of: ' + ', '.join(ITEM_SCORES.keys()))
             item_p.add_argument('-t', '--title', type=str, help='The new title to set for this item')
             item_p.add_argument('-u', '--user', type=int, help='The User ID to assign this item to')
             item_p.add_argument('-d', '--description', type=str, help='The new description of the item')
@@ -199,6 +199,7 @@ class SprintlyTool:
     def _item_action(self, args):
         self.initialize()
         pid = str(self._config['product']['id'])
+        itemID = str(args.itemID)
 
         if args.remove:
             print self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json', delete=True)
@@ -212,7 +213,7 @@ class SprintlyTool:
             updates.append(('status', args.status))
 
         if args.size:
-            if args.size not in SCORES.keys():
+            if args.size not in ITEM_SCORES.keys():
                 self.parser.print_help()
                 return
             updates.append(('score', args.size))
@@ -232,9 +233,34 @@ class SprintlyTool:
         if args.parent:
             updates.append(('parent', args.parent))
 
-        self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json', updates)
+        self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', updates)
 
-        print self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json')
+        item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
+
+        print item
+
+        #attr = DIM if item['status'] in ('completed', 'accepted') else None
+        color = ITEM_COLORS.get(item['type'])
+        
+        printItem = '''${%s} #%d${DEFAULT} (%s):${BOLD} %s${RESET}
+Assigned To: ${BOLD}%s${RESET}
+Score: ${BOLD}%s${RESET}
+'''
+        assigned_to = item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name']
+        self.cprint(printItem % (
+            color, item['number'], ITEM_STATUSES[item['status']], item['title'],
+            assigned_to, ITEM_SCORES[item['score']]
+        ))
+        if len(item['description']):
+            self.cprint(item['description'])
+
+        comments = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json')
+        if len(comments) > 0:
+            self.cprint('${UNDERLINE}${BLUE}Comments:${RESET}${DEFAULT}')
+            for comment in comments:
+                name = comment['created_by']['first_name'] + ' ' + comment['created_by']['last_name']
+                self.cprint('${DIM}%s${RESET}: %s\n' % (name, comment['body']))
+                
 
         # Creates new item
         if False:
@@ -249,10 +275,6 @@ class SprintlyTool:
                 # who, what, why required for story
             ))
             print resp
-
-            #Deletes
-            #print self.sprintlyAPICall('products/' + pid + '/items/' + str(resp['number']) + '.json', delete=True)
-
 
     def install(self, update):
         """
