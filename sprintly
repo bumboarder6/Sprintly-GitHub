@@ -26,14 +26,10 @@ logger = logging.getLogger(__name__)
 CONFIG_VERSION = '2.1'
 SPRINTLY_NAME = 'sprintly'
 SPRINTLY_DIR = '/usr/local/bin/'
-HOOK_NAME = 'commit-msg'
-HOOK_DIR = '/usr/local/share/sprintly/'
 SPRINTLY_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/sprintly'
-COMMIT_MSG_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/commit-msg'
 
 # non-editable constants
 SPRINTLY_PATH = SPRINTLY_DIR + SPRINTLY_NAME
-HOOK_PATH = HOOK_DIR + HOOK_NAME
 
 # tty colors
 DEFAULT = '\x1b[39m'
@@ -60,15 +56,6 @@ ITEM_STATUSES = {
     'completed': "Completed",
     'accepted': "Accepted",
 }
-
-def enum(**enums):
-    return type('Enum', (), enums)
-
-def grab_users(limit):
-    return True
-
-def grab_items(limit):
-    return True
 
 class SprintlyTool:
     """
@@ -443,7 +430,7 @@ class SprintlyTool:
         users = data['users']
         for user_id in users:
             user = users[user_id]
-            printUser = '${NORMAL}' + user_id + ': ${BOLD}${BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
+            printUser = '${NORMAL}' + str(user_id) + ': ${BOLD}${BLUE}' + user['first_name'] + ' ' + user['last_name'] + ' ${NORMAL}${GREY}(' + user['email'] + ')'
             self.cprint(printUser)
         self.cprint('')
 
