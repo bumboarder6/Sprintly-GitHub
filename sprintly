@@ -251,15 +251,23 @@ Score: ${BOLD}%s${RESET}
             assigned_to, ITEM_SCORES[item['score']]
         ))
         if len(item['description']):
-            self.cprint('${UNDERLINE}${BLUE}Description:${RESET}${DEFAULT}')
+            self.cprint('${UNDERLINE}${MAGENTA}Description:${RESET}${DEFAULT}')
             self.cprint(item['description'] + '\n')
+        
+        if item['type'] == 'story':
+            children = self.sprintlyAPICall('/products/' + pid + '/items/' + itemID + '/children.json')
+            if len (children) > 0:
+                self.cprint('${UNDERLINE}${MAGENTA}Children:${RESET}${DEFAULT}')
+                products = [{'id': pid, 'items': children, 'name': 'Vadio'}]
+                self.printItems(products, False)
 
         comments = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json')
         if len(comments) > 0:
-            self.cprint('${UNDERLINE}${BLUE}Comments:${RESET}${DEFAULT}')
+            self.cprint('${UNDERLINE}${MAGENTA}Comments:${RESET}${DEFAULT}')
             for comment in comments:
                 name = comment['created_by']['first_name'] + ' ' + comment['created_by']['last_name']
                 self.cprint('${DIM}%s${RESET}: %s' % (name, comment['body']))
+
 
     def install(self, update):
         """
@@ -512,7 +520,7 @@ Score: ${BOLD}%s${RESET}
         data = self.getSprintlyItems(user_id, listCompletedItems, 1000)
         self.printItems(data)
 
-    def printItems(self, products):
+    def printItems(self, products, shouldPrintHeader=True):
         """
         Print a list of Sprint.ly items.
         """
@@ -541,8 +549,9 @@ Score: ${BOLD}%s${RESET}
                 items = status[product_id]
                 name = items[0]['product']['name']
                 productId = str(items[0]['product']['id'])
-                printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
-                self.cprint(printProduct)
+                if shouldPrintHeader:
+                    printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
+                    self.cprint(printProduct)
 
                 title_color = 'DEFAULT'
                 for item in items:
