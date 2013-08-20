@@ -135,7 +135,9 @@ class SprintlyTool:
 
             items_p = subparsers.add_parser('items', help='Perform actions on items. Lists items by default.')
             items_p.set_defaults(func=self._items_action)
-            items_p.add_argument('-u', '--user', type=int, default=None, help='Specify a user (by user ID). Defaults to you.')
+            items_p.add_argument('-u', '--user', default=None, help='Specify a user (by user ID). Defaults to you.')
+            items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
+            
             items_p_arg_group = items_p.add_mutually_exclusive_group()
             items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
             
@@ -185,7 +187,7 @@ class SprintlyTool:
         self.initialize()
         if args:
             #default is to list items
-            self.listSprintlyItems(args.user)
+            self.listSprintlyItems(args.user, args.completed)
             return
         
         # default action, list this user's items:
@@ -436,11 +438,11 @@ class SprintlyTool:
             self.cprint(printUser)
         self.cprint('')
 
-    def listSprintlyItems(self, user_id = None):
+    def listSprintlyItems(self, user_id = None, listCompletedItems=False):
         """
         Lists all items for the current user from the Sprint.ly API.
         """
-        data = self.getSprintlyItems(user_id, 1000)
+        data = self.getSprintlyItems(user_id, listCompletedItems, 1000)
         self.printItems(data)
 
     def printItems(self, products):
@@ -496,7 +498,7 @@ class SprintlyTool:
 
             self.cprint('')
 
-    def getSprintlyItems(self, userId=None, limit=100):
+    def getSprintlyItems(self, userId=None, listCompletedItems=False, limit=100):
         """
         Get all Sprint.ly items. By default gets them for local user, but can
         also retrieve for other users when given a user ID.
@@ -505,12 +507,39 @@ class SprintlyTool:
         if not userId:
             userId = self._config['id']
         
-        data = []
+        l_products = self._getSprintlyItemsCore(userId, limit=limit)
+        if listCompletedItems:
+            t_data = self._getSprintlyItemsCore(userId, status='completed', limit=limit, assoc=True)
+            for product in l_products:
+                if str(product['id']) in t_data:
+                    product['items'] = product['items'] + t_data[str(product['id'])]['items']
+        return l_products
+
+    def _getSprintlyItemsCore(self, userId=None, status=None, limit=100, assoc=False):
+        """
+        Get Sprint.ly items. By default, just in-progress and backlog items are
+        listed. Specify a status to limit to that status. pass assoc=True to 
+        get an associative array back linking product IDs to products, rather
+        than the default array of products.
+        """
+        
+        if status != None:
+            status = '&status=' + status
+        else:
+            status = ''
+        
+        data = None
+        if assoc:
+            data = {}
+        else:
+            data = []
         products = []
         
         try:
             # use product from config file
-            products.append(self._config['product'])
+            product = {'name': self._config['product']['name'],
+                       'id': self._config['product']['id']};
+            products.append(product)
             
             # get products from the API
             # products = self.sprintlyAPICall('products.json')
@@ -526,7 +555,7 @@ class SprintlyTool:
                 items = []
                 offset = 0
                 while True:
-                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
+                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + status + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
 
                     # if we get nothing, an empty list, an error, quit
                     if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
@@ -595,7 +624,10 @@ class SprintlyTool:
                 itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
                 product['items'] = itemsTree
                 
-                data.append(product)
+                if assoc:
+                    data[productId] = product
+                else:
+                    data.append(product)
             
             return data
         except Exception as ex:
