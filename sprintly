@@ -100,7 +100,9 @@ class SprintlyTool:
         """
         Application flow.
         """
-
+        
+        self.cprint('${BLACK} Black ${RED} RED ${GREEN} GREEN ${YELLOW} YELLOW ${BLUE} BLUE ${MAGENTA} MAGENTA ${CYAN} CYAN ${LIGHT_GREY} LIGHT_GREY ${GREY} GREY ${BRIGHT_RED} BRIGHT_RED ${BRIGHT_GREEN} BRIGHT_GREEN ${BRIGHT_YELLOW} BRIGHT_YELLOW ${BRIGHT_BLUE} BRIGHT_BLUE ${BRIGHT_MAGENTA} BRIGHT_MAGENTA ${BRIGHT_CYAN} BRIGHT_CYAN ${WHITE} WHITE')
+        
         try:
             if len(sys.argv) == 1:
                 self._items_action()
@@ -151,6 +153,7 @@ class SprintlyTool:
             item_p.add_argument('-g', '--tags', type=str, help='comma delimited tags to attach to the item')
             item_p.add_argument('-p', '--parent', type=int, help='The parent story to add this to')
             item_p.add_argument('-r', '--remove', action='store_true', help='REMOVES THE ITEM')
+            item_p.add_argument('-c', '--comment', type=str, help='Adds a new comment to the item')
 
             self.parser = parser
             args = parser.parse_args()
@@ -244,8 +247,12 @@ class SprintlyTool:
         printItem = '''${%s} #%d${DEFAULT} (%s):${BOLD} %s${RESET}
 Assigned To: ${BOLD}%s${RESET}
 Score: ${BOLD}%s${RESET}
-'''
-        assigned_to = item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name']
+    '''
+        if not item['assigned_to']:
+            assigned_to = 'Unassigned'
+        else:
+            assigned_to = item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name']
+
         self.cprint(printItem % (
             color, item['number'], ITEM_STATUSES[item['status']], item['title'],
             assigned_to, ITEM_SCORES[item['score']]
@@ -549,16 +556,24 @@ Score: ${BOLD}%s${RESET}
                 items = status[product_id]
                 name = items[0]['product']['name']
                 productId = str(items[0]['product']['id'])
+                
                 if shouldPrintHeader:
                     printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
                     self.cprint(printProduct)
 
                 title_color = 'DEFAULT'
                 for item in items:
+                    if not item['assigned_to']:
+                        assigned_to = '(Unassigned)'
+                    else:
+                        assigned_to = '(' + item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name'] + ')'
+
                     attr = DIM if item['status'] in ('completed', 'accepted') else None
                     color = ITEM_COLORS.get(item['type'])
 
-                    printItem = '${%s} #%d${DEFAULT}:${%s} %s' % (color, item['number'], title_color, item['title'])
+                    printItem = '${%s}%-6s${DEFAULT}     %18s:  ${%s}%s' % (
+                        color, '#' + str(item['number']), assigned_to, title_color, item['title']
+                    )
                     self.cprint(printItem, attr=attr)
 
                     if 'children' in item:
@@ -569,7 +584,14 @@ Score: ${BOLD}%s${RESET}
                             if child['status'] == 'in-progress':
                                 title = u'${GREEN}⧁ ${%s}%s' % (title_color, title)
 
-                            printChild = u'${%s}  #%d${DEFAULT}:${%s} %s' % (childColor, child['number'], title_color, title)
+                            if not child['assigned_to']:
+                                assigned_to = 'Unassigned'
+                            else:
+                                assigned_to = '(' + child['assigned_to']['first_name'] + ' ' + child['assigned_to']['last_name'] + ')'
+
+                            printChild = u'${%s}   %-6s${DEFAULT}  %18s:  ${%s}%s' % (
+                                childColor, '#' + str(child['number']), assigned_to, title_color, title
+                            )
                             self.cprint(printChild, attr=attr)
 
             self.cprint('')
