@@ -239,9 +239,6 @@ class SprintlyTool:
 
         item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
 
-        print item
-
-        #attr = DIM if item['status'] in ('completed', 'accepted') else None
         color = ITEM_COLORS.get(item['type'])
         
         printItem = '''${%s} #%d${DEFAULT} (%s):${BOLD} %s${RESET}
@@ -254,29 +251,15 @@ Score: ${BOLD}%s${RESET}
             assigned_to, ITEM_SCORES[item['score']]
         ))
         if len(item['description']):
-            self.cprint(item['description'])
+            self.cprint('${UNDERLINE}${BLUE}Description:${RESET}${DEFAULT}')
+            self.cprint(item['description'] + '\n')
 
         comments = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json')
         if len(comments) > 0:
             self.cprint('${UNDERLINE}${BLUE}Comments:${RESET}${DEFAULT}')
             for comment in comments:
                 name = comment['created_by']['first_name'] + ' ' + comment['created_by']['last_name']
-                self.cprint('${DIM}%s${RESET}: %s\n' % (name, comment['body']))
-                
-
-        # Creates new item
-        if False:
-            resp = self.sprintlyAPICall('products/' + pid + '/items.json', (
-                ('type', 'task'), 
-                ('title', 'CLI Created task'), 
-                ('description', 'This is a test of the CLI interface'), 
-                ('status', 'in-progress'), 
-                ('assigned_to', '4878'),
-                ('score', 'S'),
-                ('tags', 'some,new,tag1,tag2')
-                # who, what, why required for story
-            ))
-            print resp
+                self.cprint('${DIM}%s${RESET}: %s' % (name, comment['body']))
 
     def install(self, update):
         """
