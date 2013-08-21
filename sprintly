@@ -634,6 +634,7 @@ class SprintlyTool:
         Lists all items for the current user from the Sprint.ly API.
         """
         data = self.getSprintlyItems(userId, listCompletedItems, 1000)
+        print data
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True):
@@ -929,7 +930,7 @@ class SprintlyTool:
             valid.append('-1')
             uid = raw_input(self.render('${BRIGHT_YELLOW}Which User ID:${RESET} ', trim=False))
             
-            while uid not in :
+            while uid not in valid:
                 uid = raw_input('Please enter a valid user ID from above: ')
 
             if uid == '-1':
