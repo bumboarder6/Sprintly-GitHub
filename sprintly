@@ -66,13 +66,16 @@ INIT_MSG = '# Please enter your %s below, any commented lines will be removed'
 def messageFromEditor(usage):
     """ Spawns an editor with the init message in it then returns the contents
         after it is finished and saved, returns None if there was an empty file """
-    tmp = tempfile.NamedTemporaryFile(suffix=".tmp")
+    tmp = tempfile.NamedTemporaryFile(suffix=".tmp", delete=False)
     tmp.write(INIT_MSG % (usage,))
     tmp.flush()
-    call([EDITOR, tmp.name])
-    tmp = open(tmp.name, 'r')
+    name = tmp.name
+    tmp.close()
+    call([EDITOR, name])
+    tmp = open(name, 'r')
     data = tmp.read()
     tmp.close()
+    os.remove(name)
     return re.sub('^\s*#.*?$', '', data, flags=re.M | re.I).strip()
 
 
@@ -324,6 +327,7 @@ class SprintlyTool:
             return
 
         item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
+        #print item
 
         color = ITEM_COLORS.get(item['type'])
         
