@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # constants
 CONFIG_VERSION = '2.1'
 SPRINTLY_NAME = 'sprintly'
-SPRINTLY_DIR = '/usr/local/bin/'
+SPRINTLY_DIR = '/usr/local/bin/' if os.name != 'nt' else os.environ["PYTHONHOME"]+'/Scripts/'
 SPRINTLY_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/sprintly'
 
 # non-editable constants
@@ -101,7 +101,7 @@ class SprintlyTool:
         Application flow.
         """
         
-        self.cprint('${BLACK} Black ${RED} RED ${GREEN} GREEN ${YELLOW} YELLOW ${BLUE} BLUE ${MAGENTA} MAGENTA ${CYAN} CYAN ${LIGHT_GREY} LIGHT_GREY ${GREY} GREY ${BRIGHT_RED} BRIGHT_RED ${BRIGHT_GREEN} BRIGHT_GREEN ${BRIGHT_YELLOW} BRIGHT_YELLOW ${BRIGHT_BLUE} BRIGHT_BLUE ${BRIGHT_MAGENTA} BRIGHT_MAGENTA ${BRIGHT_CYAN} BRIGHT_CYAN ${WHITE} WHITE')
+        # self.cprint('${BLACK} Black ${RED} RED ${GREEN} GREEN ${YELLOW} YELLOW ${BLUE} BLUE ${MAGENTA} MAGENTA ${CYAN} CYAN ${LIGHT_GREY} LIGHT_GREY ${GREY} GREY ${BRIGHT_RED} BRIGHT_RED ${BRIGHT_GREEN} BRIGHT_GREEN ${BRIGHT_YELLOW} BRIGHT_YELLOW ${BRIGHT_BLUE} BRIGHT_BLUE ${BRIGHT_MAGENTA} BRIGHT_MAGENTA ${BRIGHT_CYAN} BRIGHT_CYAN ${WHITE} WHITE')
         
         try:
             if len(sys.argv) == 1:
@@ -293,6 +293,7 @@ Score: ${BOLD}%s${RESET}
 
         # verify nothing exists at the target path
         target = SPRINTLY_PATH
+        if os.name == 'nt': target += '.py'
         if os.path.isfile(target):
             overwrite = raw_input(self.render('${BRIGHT_YELLOW}A file already exists at %s.${RESET} Overwrite file? ' % target, trim=False))
             while overwrite != 'y' and overwrite != 'n':
