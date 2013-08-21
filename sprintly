@@ -66,11 +66,14 @@ EDITOR = os.environ.get('EDITOR', 'emacs')
 
 INIT_MSG = '# Please enter your %s below, any commented lines will be removed'
 
-def messageFromEditor(usage):
+def messageFromEditor(usage, replace=False):
     """ Spawns an editor with the init message in it then returns the contents
         after it is finished and saved, returns None if there was an empty file """
     tmp = tempfile.NamedTemporaryFile(suffix=".tmp", delete=False)
-    tmp.write(INIT_MSG % (usage,))
+    if not replace:
+        tmp.write(INIT_MSG % (usage,))
+    else:
+        tmp.write(usage)
     tmp.flush()
     name = tmp.name
     tmp.close()
@@ -263,9 +266,11 @@ class SprintlyTool:
         
         if args.itemID:
             itemID = str(args.itemID)
+            item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
         else:
             itemID = None
-
+            item = None
+        
         if itemID and args.remove:
             if not itemID:
                 self.cprint("Can't delete something that hasn't been created")
@@ -294,10 +299,14 @@ class SprintlyTool:
 
         if args.user:
             userID = self.getUserByEmail(args.user)
-            updates.append(('assigned_to', userID))
+            if userID:
+                updates.append(('assigned_to', userID))
 
         if args.description:
-            description = messageFromEditor('Description')
+            if item:
+                description = messageFromEditor(item['description'], replace=True)
+            else:
+                description = messageFromEditor('Description', replace=True)
             if not description:
                 self.cprint('No Description Entered')
             else:
@@ -365,6 +374,7 @@ class SprintlyTool:
         self.cprint(printAssignedTo % (
             assigned_to, ITEM_SCORES[item['score']]
         ))
+
         if len(item['description']):
             self.cprint('${UNDERLINE}${MAGENTA}Description:${RESET}${DEFAULT}')
             self.cprint('\t' + item['description'] + '\n', trim=False)
@@ -754,6 +764,10 @@ class SprintlyTool:
         also retrieve for other users when given a user ID.
         """
         
+        if userId:
+            userId = self.getUserByEmail(userId)
+
+        # don't make else
         if not userId:
             userId = self._config['id']
         else:
@@ -925,12 +939,12 @@ class SprintlyTool:
             if re.search(email, str(data['email']), re.I | re.S):
                 acceptable.append((userID, data))
 
+        valid = []
         if len(acceptable) == 1:
             return acceptable[0][0]
 
         elif len(acceptable) > 1:
             self.cprint('${BRIGHT_YELLOW}Multiple users exist for that re please select an ID from below:${RESET}')
-            valid = []
             for user in acceptable:
                 valid.append(str(user[0]))
                 printUser = '${NORMAL}  ' + str(user[0]) + ': ${BOLD}${LIGHT_BLUE}' + user[1]['first_name'] + ' ' + user[1]['last_name'] + ' ${NORMAL}${GREY}(' + user[1]['email'] + ')'
@@ -944,8 +958,23 @@ class SprintlyTool:
             return int(uid)
 
         else:
-            return None
+            self.cprint('${BRIGHT_YELLOW}No users exist for that re please select an ID from below or -1 for no user:${RESET}')
             
+            for user in users.items():
+                valid.append(str(user[0]))
+                printUser = '${NORMAL}  ' + str(user[0]) + ': ${BOLD}${LIGHT_BLUE}' + user[1]['first_name'] + ' ' + user[1]['last_name'] + ' ${NORMAL}${GREY}(' + user[1]['email'] + ')'
+                self.cprint(printUser)
+
+            valid.append('-1')
+            uid = raw_input(self.render('${BRIGHT_YELLOW}Which User ID:${RESET} ', trim=False))
+            
+            while uid not in valid:
+                uid = raw_input('Please enter a valid user ID from above: ')
+
+            if uid == '-1':
+                return None
+            return int(uid)
+                        
     def getSprintlyUsers(self, byProducts=False):
         """
         Get all Sprint.ly users.
