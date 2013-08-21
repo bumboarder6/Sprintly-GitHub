@@ -369,15 +369,18 @@ class SprintlyTool:
 
         color = ITEM_COLORS.get(item['type'])
         
-        printItem = '''${%s}#%d${DEFAULT} (%s):${BOLD} %s${RESET}\n\tAssigned To: ${BOLD}%s${RESET}\n\tScore: ${BOLD}%s${RESET}\n'''
-
+        printItem = '''${%s}#%d${DEFAULT} (%s):${BOLD} %s${RESET}'''
+        printAssignedTo = '''${DEFAULT}\tAssigned To: ${BOLD}%s${RESET}\n\tScore: ${BOLD}%s${RESET}\n'''
+        
         if not item['assigned_to']:
             assigned_to = 'Unassigned'
         else:
             assigned_to = item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name']
 
         self.cprint(printItem % (
-            color, item['number'], ITEM_STATUSES[item['status']], item['title'],
+            color, item['number'], ITEM_STATUSES[item['status']], item['title']
+        ))
+        self.cprint(printAssignedTo % (
             assigned_to, ITEM_SCORES[item['score']]
         ))
         if len(item['description']):
@@ -674,7 +677,8 @@ class SprintlyTool:
                 # If the item is already in the list or is assigned to someone
                 # else, it could mean this entry contains children with a
                 # different status:
-                yourTask = 'assigned_to' in item and item['assigned_to']['id'] == self._this_user()
+                notUnassigned = 'assigned_to' in item and item['assigned_to'] != None
+                yourTask = notUnassigned and item['assigned_to']['id'] == self._this_user()
                 productNotInTree = not product['id'] in statusTree[item['status']]
                 itemInTree = item['number'] in prevIds
                 itemNotInTree = not itemInTree
