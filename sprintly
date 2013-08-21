@@ -6,10 +6,13 @@ from curses import setupterm, tigetstr, tigetnum, tparm
 from time import time
 from argparse import ArgumentParser
 from subprocess import call
+if os.name == 'nt': import ctypes, struct
 
 # force utf-8 encoding
 reload(sys)
 sys.setdefaultencoding('utf-8')
+
+if os.name == 'nt': import uniconsole
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -85,10 +88,11 @@ class SprintlyTool:
         """
         Initialize instance variables.
         """
-
+        
         # Set up terminal
-        locale.setlocale(locale.LC_ALL, '')
+        if os.name != 'nt': locale.setlocale(locale.LC_ALL, '')
         self._encoding = locale.getpreferredencoding()
+        
 
         self._term = term_stream or sys.__stdout__
         self._is_tty = False
@@ -97,10 +101,15 @@ class SprintlyTool:
 
         if hasattr(term_stream, "isatty") and term_stream.isatty():
             try:
-                setupterm()
+                if os.name != 'nt': 
+                    setupterm()
+                    self._has_color = (tigetnum('colors') > 2)
+                    self._cols = tigetnum('cols')
+                else:
+                    self._has_color = True
+                    self._cols = _get_terminal_size_windows()[0]
+                
                 self._is_tty = True
-                self._has_color = tigetnum('colors') > 2
-                self._cols = tigetnum('cols')
             except:
                 pass
         else:
@@ -109,7 +118,7 @@ class SprintlyTool:
                 self._cols = int(columns)
             except:
                 pass
-
+        
         self._config = {}
         self._sprintlyDirectoryPath = None
         self._sprintlyConfigPath = None
@@ -988,6 +997,25 @@ def die(message=None, *args):
         logger.error(message, *args, exc_info=True)
     print 'Program exiting.'
     sys.exit(1)
+
+def _get_terminal_size_windows():
+    try:
+        from ctypes import windll, create_string_buffer
+        # stdin handle is -10
+        # stdout handle is -11
+        # stderr handle is -12
+        h = windll.kernel32.GetStdHandle(-12)
+        csbi = create_string_buffer(22)
+        res = windll.kernel32.GetConsoleScreenBufferInfo(h, csbi)
+        if res:
+            (bufx, bufy, curx, cury, wattr,
+            left, top, right, bottom,
+            maxx, maxy) = struct.unpack("hhhhHhhhhhh", csbi.raw)
+            sizex = right - left + 1
+            sizey = bottom - top + 1
+            return sizex, sizey
+    except:
+        pass
 
 if __name__ == '__main__':
     sprintlyTool = SprintlyTool()
