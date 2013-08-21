@@ -66,11 +66,14 @@ EDITOR = os.environ.get('EDITOR', 'emacs')
 
 INIT_MSG = '# Please enter your %s below, any commented lines will be removed'
 
-def messageFromEditor(usage):
+def messageFromEditor(usage, replace=False):
     """ Spawns an editor with the init message in it then returns the contents
         after it is finished and saved, returns None if there was an empty file """
     tmp = tempfile.NamedTemporaryFile(suffix=".tmp", delete=False)
-    tmp.write(INIT_MSG % (usage,))
+    if not replace:
+        tmp.write(INIT_MSG % (usage,))
+    else:
+        tmp.write(usage)
     tmp.flush()
     name = tmp.name
     tmp.close()
@@ -262,9 +265,11 @@ class SprintlyTool:
         
         if args.itemID:
             itemID = str(args.itemID)
+            item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
         else:
             itemID = None
-
+            item = None
+        
         if itemID and args.remove:
             if not itemID:
                 self.cprint("Can't delete something that hasn't been created")
@@ -297,7 +302,10 @@ class SprintlyTool:
                 updates.append(('assigned_to', userID))
 
         if args.description:
-            description = messageFromEditor('Description')
+            if item:
+                description = messageFromEditor(item['description'], replace=True)
+            else:
+                description = messageFromEditor('Description', replace=True)
             if not description:
                 self.cprint('No Description Entered')
             else:
@@ -365,6 +373,7 @@ class SprintlyTool:
         self.cprint(printAssignedTo % (
             assigned_to, ITEM_SCORES[item['score']]
         ))
+
         if len(item['description']):
             self.cprint('${UNDERLINE}${MAGENTA}Description:${RESET}${DEFAULT}')
             self.cprint('\t' + item['description'] + '\n', trim=False)
