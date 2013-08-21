@@ -662,23 +662,40 @@ class SprintlyTool:
         for product in products:
             prevIds = []
             for item in product['items']:
-                # If the item is already in the list, it probably means this
-                # duplicate entry contains children with a different status:
-                if not product['id'] in statusTree[item['status']]:
-                    statusTree[item['status']][product['id']] = [item]
+                # If the item is already in the list or is assigned to someone
+                # else, it could mean this entry contains children with a
+                # different status:
+                yourTask = 'assigned_to' in item and item['assigned_to']['id'] == self._this_user()
+                productNotInTree = not product['id'] in statusTree[item['status']]
+                itemInTree = item['number'] in prevIds
+                itemNotInTree = not itemInTree
+                print 'your task: ' + str(yourTask) + ' not in tree: ' + str(itemNotInTree) + ' status: ' + item['status']
+                if itemNotInTree and yourTask:
+                    # Straight forward, just add to status of parent
+                    if productNotInTree:
+                        statusTree[item['status']][product['id']] = [item]
+                    else:
+                        statusTree[item['status']][product['id']].append(item)
                     prevIds.append(item['number'])
                 else:
-                    itemInTree = item['number'] in prevIds
+                    # Either not your task or already in tree. If not your task,
+                    # then the relavent status is the one of the subtasks that
+                    # /are/ assigned to you. If this task is already in the tree,
+                    # then the relavent status is that of a child.
                     parentItem = 'children' in item
                     diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
-                    if itemInTree and diffChildStatus:
+                    if diffChildStatus:
                         children = item['children']
                         first_child = children[0]
                         if not product['id'] in statusTree[first_child['status']]:
                             statusTree[first_child['status']][product['id']] = []
                         statusTree[first_child['status']][product['id']].append(item)
+                        prevIds.append(item['number'])
                     else:
-                        statusTree[item['status']][product['id']].append(item)
+                        if itemNotInTree:
+                            statusTree[item['status']][product['id']] = [item]
+                        else:
+                            statusTree[item['status']][product['id']].append(item)
                         prevIds.append(item['number'])
 
         for key in order:
