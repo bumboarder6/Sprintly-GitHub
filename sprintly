@@ -547,11 +547,26 @@ class SprintlyTool:
         }
 
         for product in products:
+            prevIds = []
             for item in product['items']:
+                # If the item is already in the list, it probably means this
+                # duplicate entry contains children with a different status:
                 if not product['id'] in statusTree[item['status']]:
-                    statusTree[item['status']][product['id']] = []
-
-                statusTree[item['status']][product['id']].append(item)
+                    statusTree[item['status']][product['id']] = [item]
+                    prevIds.append(item['number'])
+                else:
+                    itemInTree = item['number'] in prevIds
+                    parentItem = 'children' in item
+                    diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
+                    if itemInTree and diffChildStatus:
+                        children = item['children']
+                        first_child = children[0]
+                        if not product['id'] in statusTree[first_child['status']]:
+                            statusTree[first_child['status']][product['id']] = []
+                        statusTree[first_child['status']][product['id']].append(item)
+                    else:
+                        statusTree[item['status']][product['id']].append(item)
+                        prevIds.append(item['number'])
 
         for key, status in iter(sorted(statusTree.items())):
             if not len(status):
@@ -575,7 +590,9 @@ class SprintlyTool:
                     else:
                         assigned_to = '(' + item['assigned_to']['first_name'] + ' ' + item['assigned_to']['last_name'] + ')'
 
-                    attr = DIM if item['status'] in ('completed', 'accepted') else None
+                    attr = None
+                    if item['status'] != key:
+                        attr = DIM
                     color = ITEM_COLORS.get(item['type'])
 
                     printItem = '${%s}%-6s${DEFAULT}     %18s:  ${%s}%s' % (
@@ -585,7 +602,7 @@ class SprintlyTool:
 
                     if 'children' in item:
                         for child in item['children']:
-                            attr = DIM if child['status'] in ('completed', 'accepted') else None
+                            attr = None
                             childColor = ITEM_COLORS.get(child['type'])
                             title = child['title']
                             if child['status'] == 'in-progress':
