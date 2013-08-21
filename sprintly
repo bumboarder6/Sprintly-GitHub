@@ -833,7 +833,7 @@ class SprintlyTool:
                     itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + status + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
 
                     # if we get nothing, an empty list, an error, quit
-                    if not itemsPartial or len(itemsPartial) == 0 or 'code' in items:
+                    if not itemsPartial or len(itemsPartial) == 0 or 'code' in itemsPartial:
                         break
                     # otherwise, add on these items and increase the offset
                     else:
