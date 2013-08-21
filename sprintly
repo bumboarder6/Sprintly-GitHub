@@ -933,6 +933,8 @@ class SprintlyTool:
     def getUserByEmail(self, email):
         """ Gets a single user id using the email string as the
             string to match against """
+        if re.search('^\d+$', email):
+            return email
         users = self.getSprintlyUsers()
         acceptable = []
         for userID, data in users.items():
