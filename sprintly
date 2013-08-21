@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import sys, os, locale, urllib, urllib2, json, subprocess, re, string, logging
+import sys, os, locale, urllib, urllib2, json, subprocess, re, string, logging, os, tempfile
 from curses import setupterm, tigetstr, tigetnum, tparm
 from time import time
 from argparse import ArgumentParser
+from subprocess import call
 
 # force utf-8 encoding
 reload(sys)
@@ -55,6 +56,24 @@ ITEM_SCORES = {
     'L': 'Breakin a sweat',
     'XL': 'WTF'
 }
+
+EDITOR = os.environ.get('EDITOR', 'emacs')
+
+
+INIT_MSG = '# Please enter your %s below, any commented lines will be removed'
+
+def messageFromEditor(usage):
+    """ Spawns an editor with the init message in it then returns the contents
+        after it is finished and saved, returns None if there was an empty file """
+    tmp = tempfile.NamedTemporaryFile(suffix=".tmp")
+    tmp.write(INIT_MSG % (usage,))
+    tmp.flush()
+    call([EDITOR, tmp.name])
+    tmp = open(tmp.name, 'r')
+    data = tmp.read()
+    tmp.close()
+    return re.sub('^\s*#.*?$', '', data, flags=re.M | re.I).strip()
+
 
 class SprintlyTool:
     """
@@ -143,17 +162,31 @@ class SprintlyTool:
             items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
             
             item_p = subparsers.add_parser('item', help='List or Edit an item specified by id')
-            item_p.set_defaults(func=self._item_action)
+            item_p.set_defaults(func=self._item_action, new=False)
             item_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to list or edit')
             item_p.add_argument('-s', '--status', type=str, help='The new status to set this item to, one of: ' + ', '.join(ITEM_STATUSES.keys()))
             item_p.add_argument('-z', '--size', type=str, help='The approximate size of the item can be one of: ' + ', '.join(ITEM_SCORES.keys()))
             item_p.add_argument('-t', '--title', type=str, help='The new title to set for this item')
             item_p.add_argument('-u', '--user', type=int, help='The User ID to assign this item to')
-            item_p.add_argument('-d', '--description', type=str, help='The new description of the item')
+            item_p.add_argument('-d', '--description', action='store_true', help='Starts an editor for you to insert a description')
             item_p.add_argument('-g', '--tags', type=str, help='comma delimited tags to attach to the item')
             item_p.add_argument('-p', '--parent', type=int, help='The parent story to add this to')
             item_p.add_argument('-r', '--remove', action='store_true', help='REMOVES THE ITEM')
-            item_p.add_argument('-c', '--comment', type=str, help='Adds a new comment to the item')
+            item_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+
+            add_p = subparsers.add_parser('add', help='Add a new item to sprintly')
+            add_p.set_defaults(func=self._item_action, new=True, itemID=None, comment=False)
+            add_p.add_argument('type', metavar='type', type=str, help='The new item type to add, must be one of: ' + ', '.join(ITEM_COLORS.keys()))
+            add_p.add_argument('title', metavar='title', type=str, help='The new title to set for this item')
+            add_p.add_argument('-d', '--description', action='store_true', help='Starts an editor for you to insert a description')
+            add_p.add_argument('-s', '--status', type=str, help='The new status to set this item to, one of: ' + ', '.join(ITEM_STATUSES.keys()))
+            add_p.add_argument('-z', '--size', type=str, help='The approximate size of the item can be one of: ' + ', '.join(ITEM_SCORES.keys()))
+            add_p.add_argument('-u', '--user', type=int, help='The User ID to assign this item to')
+            add_p.add_argument('-g', '--tags', type=str, help='comma delimited tags to attach to the item')
+            add_p.add_argument('-p', '--parent', type=int, help='The parent story to add this to (non stories only)')
+            add_p.add_argument('--who', type=str, help='Required for stories, who is requesting this')
+            add_p.add_argument('--what', type=str, help='Required for stories, what is this story for')
+            add_p.add_argument('--why', type=str, help='Required for stories, why is this story important')
 
             self.parser = parser
             args = parser.parse_args()
@@ -204,10 +237,20 @@ class SprintlyTool:
     def _item_action(self, args):
         self.initialize()
         pid = str(self._config['product']['id'])
-        itemID = str(args.itemID)
+        
+        if args.itemID:
+            itemID = str(args.itemID)
+        else:
+            itemID = None
 
-        if args.remove:
-            print self.sprintlyAPICall('products/' + pid + '/items/' + str(args.itemID) + '.json', delete=True)
+        if itemID and args.remove:
+            if not itemID:
+                self.cprint("Can't delete something that hasn't been created")
+                return
+            if self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', delete=True):
+                self.cprint('Successfully Removed Item ' + itemID)
+            else:
+                self.cprint('Failed to remove item ' + itemID)
             return
 
         updates = []
@@ -230,7 +273,11 @@ class SprintlyTool:
             updates.append(('assigned_to', args.user))
 
         if args.description:
-            updates.append(('description', args.description))
+            description = messageFromEditor('Description')
+            if not description:
+                self.cprint('No Description Entered')
+            else:
+                updates.append(('description', description))
 
         if args.tags:
             updates.append(('tags', args.tags))
@@ -238,15 +285,42 @@ class SprintlyTool:
         if args.parent:
             updates.append(('parent', args.parent))
 
+        if not itemID:
+            if args.type not in ('defect', 'test', 'task', 'story'):
+                self.cprint('Unsupported type for a new item')
+                self.parser.print_help()
+                return
+            updates.append(('type', args.type))
+
+            if args.type == 'story':
+                if not all([args.who, args.what, args.why]):
+                    self.cprint('Missing Required Parameters For Story Type')
+                    self.parser.print_help()
+                    return
+                updates.append(('who', args.who))
+                updates.append(('what', args.what))
+                updates.append(('why', args.why))
+
+            resp = self.sprintlyAPICall('products/' + pid + '/items.json', updates)
+            if not resp:
+                self.cprint("Couldn't create the new item, check internet connection")
+                return 
+            
+            itemID = str(resp['number'])
+
+        else:
+            self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', updates)
+
         if args.comment:
-            if self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json', [('body', args.comment)]):
-                print 'Successfully Commented'
+            comment = messageFromEditor('Comment')
+            if not comment:
+                self.cprint('No Comment entered')
+                return
+            if self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json', [('body', comment)]):
+                self.cprint('Successfully Commented on Item ' + itemID)
             else:
-                print 'Failed to comment check internet connection'
+                self.cprint('Failed to comment, check internet connection')
             return
-
-
-        self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', updates)
 
         item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
 
@@ -527,11 +601,11 @@ class SprintlyTool:
             self.cprint(printUser)
         self.cprint('')
 
-    def listSprintlyItems(self, user_id = None, listCompletedItems=False):
+    def listSprintlyItems(self, userId = None, listCompletedItems=False):
         """
         Lists all items for the current user from the Sprint.ly API.
         """
-        data = self.getSprintlyItems(user_id, listCompletedItems, 1000)
+        data = self.getSprintlyItems(userId, listCompletedItems, 1000)
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True):
