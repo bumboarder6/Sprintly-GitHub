@@ -894,6 +894,7 @@ class SprintlyTool:
                     data.append(product)
             
             return data
+
         except Exception as ex:
             print '\033[91m'
             print 'Unable to get sprintly data. (exception: ' + str(ex) + ')'
@@ -904,8 +905,9 @@ class SprintlyTool:
     def getUserByEmail(self, email):
         """ Gets a single user id using the email string as the
             string to match against """
-        if re.search('^\d+$', email):
-            return email
+        if type(email) == int or re.search('^\d+$', email):
+            return int(email)
+        
         users = self.getSprintlyUsers()
         acceptable = []
         for userID, data in users.items():
