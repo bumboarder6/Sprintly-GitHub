@@ -180,17 +180,17 @@ class SprintlyTool:
             item_p.add_argument('-z', '--size', type=str, help='The approximate size of the item', choices=ITEM_SCORES.keys())
             item_p.add_argument('-t', '--title', type=str, help='The new title to set for this item')
             item_p.add_argument('-u', '--user', type=str, help='The user to assign this item to (email matched)')
-            item_p.add_argument('-d', '--description', action='store_true', help='Starts an editor for you to insert a description')
+            item_p.add_argument('-d', '--description', nargs='?', type=str, default=False, const=True, help='Starts an editor for you to insert a description')
             item_p.add_argument('-g', '--tags', type=str, help='comma delimited tags to attach to the item')
             item_p.add_argument('-p', '--parent', type=int, help='The parent story to add this to')
             item_p.add_argument('-r', '--remove', action='store_true', help='REMOVES THE ITEM')
-            item_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+            item_p.add_argument('-c', '--comment', nargs='?', type=str, default=False, const=True, help='Adds a new comment to the item')
 
             add_p = subparsers.add_parser('add', help='Add a new item to sprintly')
             add_p.set_defaults(func=self._item_action, new=True, itemID=None, comment=False)
             add_p.add_argument('type', metavar='type', type=str, help='The new item type to add', choices=ITEM_COLORS.keys())
             add_p.add_argument('title', metavar='title', type=str, help='The new title to set for this item')
-            add_p.add_argument('-d', '--description', action='store_true', help='Starts an editor for you to insert a description')
+            add_p.add_argument('-d', '--description', nargs='?', type=str, default=False, const=True, help='Starts an editor for you to insert a description')
             add_p.add_argument('-s', '--status', type=str, help='The new status to set this item to', choices=ITEM_STATUSES.keys())
             add_p.add_argument('-z', '--size', type=str, help='The approximate size of the item', choices=ITEM_SCORES.keys())
             add_p.add_argument('-u', '--user', type=str, help='The user to assign this item to (email matched)')
@@ -204,7 +204,7 @@ class SprintlyTool:
             start_p.set_defaults(func=self._item_action, new=False, remove=False, description=False, size=None, title=None, tags=None,
                                  parent=None, status='in-progress', user=self._this_user())
             start_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to start.')
-            start_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+            start_p.add_argument('-c', '--comment', nargs='?', type=str, default=False, const=True, help='Adds a new comment to the item')
 
             stop_p = subparsers.add_parser('stop', help='Move a task to your backlog (equiv. to "sprintly item <item id> -s backlog -u <your id>").')
             stop_p.set_defaults(func=self._item_action, new=False, remove=False, description=False, size=None, title=None, tags=None,
@@ -218,7 +218,7 @@ class SprintlyTool:
                                     parent=None, status='completed', user=self._this_user())
             
             complete_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to move to completed (equiv. to "sprintly item <item id> -s completed -u <your id>").')
-            complete_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+            complete_p.add_argument('-c', '--comment', nargs='?', type=str, default=False, const=True, help='Adds a new comment to the item')
 
             self.parser = parser
             args = parser.parse_args()
@@ -302,11 +302,15 @@ class SprintlyTool:
             if userID:
                 updates.append(('assigned_to', userID))
 
-        if args.description:
-            if item:
+        if type(args.description) in (str, unicode):
+            updates.append(('description', args.description))
+
+        elif args.description == True:
+            if item and item['description'].strip():
                 description = messageFromEditor(item['description'], replace=True)
             else:
-                description = messageFromEditor('Description', replace=True)
+                description = messageFromEditor('Description')
+
             if not description:
                 self.cprint('No Description Entered')
             else:
@@ -333,7 +337,7 @@ class SprintlyTool:
                 updates.append(('who', args.who))
                 updates.append(('what', args.what))
                 updates.append(('why', args.why))
-
+            
             resp = self.sprintlyAPICall('products/' + pid + '/items.json', updates)
             if not resp:
                 self.cprint("Couldn't create the new item, check internet connection")
@@ -344,17 +348,22 @@ class SprintlyTool:
         else:
             self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', updates)
 
-        if args.comment:
-            comment = messageFromEditor('Comment')
+        if args.comment or type(args.comment) in (str, unicode):
+            if args.comment == True:
+                comment = messageFromEditor('Comment')
+            else:
+                comment = args.comment
+        
             if not comment:
                 self.cprint('No Comment entered')
                 return
+
             if self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json', [('body', comment)]):
                 self.cprint('Successfully Commented on Item ' + itemID)
             else:
                 self.cprint('Failed to comment, check internet connection')
             return
-
+        
         item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
         #print item
 
