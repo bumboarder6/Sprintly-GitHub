@@ -127,18 +127,14 @@ class SprintlyTool:
         # self.cprint('${BLACK} Black ${RED} RED ${GREEN} GREEN ${YELLOW} YELLOW ${BLUE} BLUE ${MAGENTA} MAGENTA ${CYAN} CYAN ${LIGHT_GREY} LIGHT_GREY ${GREY} GREY ${BRIGHT_RED} BRIGHT_RED ${BRIGHT_GREEN} BRIGHT_GREEN ${BRIGHT_YELLOW} BRIGHT_YELLOW ${BRIGHT_BLUE} BRIGHT_BLUE ${BRIGHT_MAGENTA} BRIGHT_MAGENTA ${BRIGHT_CYAN} BRIGHT_CYAN ${WHITE} WHITE')
         
         try:
+            self.initialize()
+            
             if len(sys.argv) == 1:
                 self._items_action()
                 return
             
-            description = 'By default, your Sprint.ly items will be shown.'\
-                          '\n\nWhen using the commit-msg hook, you will be prompted for a Sprint.ly item number unless you include a Sprint.ly keyword/item number in your commit message:'\
-                          '\n\n  \'Commit message goes here. References #54. Closes #65.\''\
-                          '\n\nValid Sprint.ly keywords are:'\
-                          '\n\n  close, closes, closed, fix, fixed, fixes, addresses, re, ref, refs, references, see, breaks, unfixes, reopen, reopens, re-open, re-opens'\
-                          '\n\nAs a shortcut, you may also include an item number as the first word in your commit message:'\
-                          '\n\n  \'#26 Message goes here\''\
-                          '\n\nThe hook will automatically prepend the keyword \'references\' and you won\'t be asked to provide an item number. This shortcut only works at the beginning of the message and does not support multiple item numbers.'
+            description = 'By default, your Sprint.ly items will be shown.'
+            
             parser = ArgumentParser(description=description)
             subparsers = parser.add_subparsers(dest='action_name')
             install_p = subparsers.add_parser('install', help='install this tool.')
@@ -192,6 +188,45 @@ class SprintlyTool:
             add_p.add_argument('--what', type=str, help='Required for stories, what is this story for')
             add_p.add_argument('--why', type=str, help='Required for stories, why is this story important')
 
+            start_p = subparsers.add_parser('start', help='Start a task (equiv. to "sprintly item <item id> -s in-progress -u <your id>").')
+            start_p.set_defaults(func=self._item_action, new=False,
+                                                         remove=False,
+                                                         description=False,
+                                                         size=None,
+                                                         title=None,
+                                                         tags=None,
+                                                         parent=None,
+                                                         status='in-progress',
+                                                         user=self._this_user())
+            start_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to start.')
+            start_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+
+            stop_p = subparsers.add_parser('stop', help='Move a task to your backlog (equiv. to "sprintly item <item id> -s backlog -u <your id>").')
+            stop_p.set_defaults(func=self._item_action, new=False,
+                                                        remove=False,
+                                                        description=False,
+                                                        size=None,
+                                                        title=None,
+                                                        tags=None,
+                                                        parent=None,
+                                                        status='backlog',
+                                                        user=self._this_user())
+            stop_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to put in your backlog.')
+            stop_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+
+            complete_p = subparsers.add_parser('stop', help='Move a task to completed.')
+            complete_p.set_defaults(func=self._item_action, new=False,
+                                                        remove=False,
+                                                        description=False,
+                                                        size=None,
+                                                        title=None,
+                                                        tags=None,
+                                                        parent=None,
+                                                        status='completed',
+                                                        user=self._this_user())
+            complete_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to move to completed (equiv. to "sprintly item <item id> -s completed -u <your id>").')
+            complete_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
+
             self.parser = parser
             args = parser.parse_args()
             args.func(args)
@@ -200,7 +235,6 @@ class SprintlyTool:
             die('Fatal Error: %s', e)
 
     def _initAndUpdateConfig(self, args):
-        self.initialize()
         self.updateConfig()
 
     def _installAndInit(self, args):
@@ -218,18 +252,14 @@ class SprintlyTool:
                 type = 'update'
             self.cprint('Unable to %s. Try running again with sudo.' % (type), attr=RED)
         return
-        
-        # ensure that the ~/.sprintly/ folder exists, we have credentials, etc
         self.initialize()
 
     def _users_action(self, args):
-        self.initialize()
         
         # default to listing users
         self.listSprintlyUsers(args.product)
 
     def _items_action(self, args=None):
-        self.initialize()
         if args:
             #default is to list items
             self.listSprintlyItems(args.user, args.completed)
@@ -239,7 +269,6 @@ class SprintlyTool:
         self.listSprintlyItems()
 
     def _item_action(self, args):
-        self.initialize()
         pid = str(self._config['product']['id'])
         
         if args.itemID:
@@ -977,6 +1006,11 @@ class SprintlyTool:
 
     def elipsify(self, seq):
         return seq[0:-1].strip(string.punctuation) + u'\u2026'
+
+    def _this_user(self):
+        if not 'id' in self._config:
+            return None
+        return self._config['id']
 
 
 class SprintlyException(Exception):
