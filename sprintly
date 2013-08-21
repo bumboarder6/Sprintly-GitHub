@@ -165,6 +165,7 @@ class SprintlyTool:
             items_p.set_defaults(func=self._items_action)
             items_p.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email')
             items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
+            items_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not show backlog items.')
             
             items_p_arg_group = items_p.add_mutually_exclusive_group()
             items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
@@ -251,7 +252,7 @@ class SprintlyTool:
     def _items_action(self, args=None):
         if args:
             #default is to list items
-            self.listSprintlyItems(args.user, args.completed)
+            self.listSprintlyItems(args.user, not args.omit_backlog, args.completed)
             return
         
         # default action, list this user's items:
@@ -628,11 +629,11 @@ class SprintlyTool:
             self.cprint(printUser)
         self.cprint('')
 
-    def listSprintlyItems(self, userId = None, listCompletedItems=False):
+    def listSprintlyItems(self, userId = None, listBacklogItems=True, listCompletedItems=False):
         """
         Lists all items for the current user from the Sprint.ly API.
         """
-        data = self.getSprintlyItems(userId, listCompletedItems, 1000)
+        data = self.getSprintlyItems(userId, listBacklogItems, listCompletedItems, False, 1000)
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True):
@@ -654,44 +655,45 @@ class SprintlyTool:
 
         for product in products:
             prevIds = []
-            for item in product['items']:
-                # If the item is already in the list or is assigned to someone
-                # else, it could mean this entry contains children with a
-                # different status:
-                notUnassigned = 'assigned_to' in item and item['assigned_to'] != None
-                yourTask = notUnassigned and item['assigned_to']['id'] == self._this_user()
-                productNotInTree = not product['id'] in statusTree[item['status']]
-                itemInTree = item['number'] in prevIds
-                itemNotInTree = not itemInTree
-                parentItem = 'children' in item
-                notParentItem = not parentItem
-                myTaskNotInTree = itemNotInTree and yourTask
-                if notParentItem or myTaskNotInTree:
-                    # Straight forward, just add to status of parent
-                    if productNotInTree:
-                        statusTree[item['status']][product['id']] = [item]
-                    else:
-                        statusTree[item['status']][product['id']].append(item)
-                    prevIds.append(item['number'])
-                else:
-                    # Either not your task or already in tree. If not your task,
-                    # then the relavent status is the one of the subtasks that
-                    # /are/ assigned to you. If this task is already in the tree,
-                    # then the relavent status is that of a child.
-                    diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
-                    if diffChildStatus:
-                        children = item['children']
-                        first_child = children[0]
-                        if not product['id'] in statusTree[first_child['status']]:
-                            statusTree[first_child['status']][product['id']] = []
-                        statusTree[first_child['status']][product['id']].append(item)
-                        prevIds.append(item['number'])
-                    else:
+            if 'items' in product:
+                for item in product['items']:
+                    # If the item is already in the list or is assigned to someone
+                    # else, it could mean this entry contains children with a
+                    # different status:
+                    notUnassigned = 'assigned_to' in item and item['assigned_to'] != None
+                    yourTask = notUnassigned and item['assigned_to']['id'] == self._this_user()
+                    productNotInTree = not product['id'] in statusTree[item['status']]
+                    itemInTree = item['number'] in prevIds
+                    itemNotInTree = not itemInTree
+                    parentItem = 'children' in item
+                    notParentItem = not parentItem
+                    myTaskNotInTree = itemNotInTree and yourTask
+                    if notParentItem or myTaskNotInTree:
+                        # Straight forward, just add to status of parent
                         if productNotInTree:
                             statusTree[item['status']][product['id']] = [item]
                         else:
                             statusTree[item['status']][product['id']].append(item)
                         prevIds.append(item['number'])
+                    else:
+                        # Either not your task or already in tree. If not your task,
+                        # then the relavent status is the one of the subtasks that
+                        # /are/ assigned to you. If this task is already in the tree,
+                        # then the relavent status is that of a child.
+                        diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
+                        if diffChildStatus:
+                            children = item['children']
+                            first_child = children[0]
+                            if not product['id'] in statusTree[first_child['status']]:
+                                statusTree[first_child['status']][product['id']] = []
+                            statusTree[first_child['status']][product['id']].append(item)
+                            prevIds.append(item['number'])
+                        else:
+                            if productNotInTree:
+                                statusTree[item['status']][product['id']] = [item]
+                            else:
+                                statusTree[item['status']][product['id']].append(item)
+                            prevIds.append(item['number'])
 
         for key in order:
             status = statusTree[key]
@@ -746,7 +748,7 @@ class SprintlyTool:
 
             self.cprint('')
 
-    def getSprintlyItems(self, userId=None, listCompletedItems=False, limit=100):
+    def getSprintlyItems(self, userId=None, listBacklogItems=True, listCompletedItems=False, getProductsFromServer=False, limit=100):
         """
         Get all Sprint.ly items. By default gets them for local user, but can
         also retrieve for other users when given a user ID.
@@ -757,15 +759,27 @@ class SprintlyTool:
         else:
             userId = self.getUserByEmail(userId)
         
-        l_products = self._getSprintlyItemsCore(userId, limit=limit)
+        products = self.getSprintlyProducts(getProductsFromServer)
+        t_data = []
+        
+        t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+        
+        if listBacklogItems:
+            t_data.append(self._getSprintlyItemsCore(userId, status='backlog',limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+        
         if listCompletedItems:
-            t_data = self._getSprintlyItemsCore(userId, status='completed', limit=limit, assoc=True)
-            for product in l_products:
-                if str(product['id']) in t_data:
-                    product['items'] = product['items'] + t_data[str(product['id'])]['items']
-        return l_products
+            t_data.append(self._getSprintlyItemsCore(userId, status='completed', limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+        
+        for product in products:
+            for data in t_data:
+                if data:
+                    if str(product['id']) in data:
+                        if 'items' not in product:
+                            product['items'] = []
+                        product['items'] = product['items'] + data[str(product['id'])]['items']
+        return products
 
-    def _getSprintlyItemsCore(self, userId=None, status=None, limit=100, assoc=False):
+    def _getSprintlyItemsCore(self, userId=None, status=None, limit=100, getProductsFromServer=False, assoc=False):
         """
         Get Sprint.ly items. By default, just in-progress and backlog items are
         listed. Specify a status to limit to that status. pass assoc=True to 
@@ -783,18 +797,15 @@ class SprintlyTool:
             data = {}
         else:
             data = []
-        products = []
+        products = self.getSprintlyProducts(getProductsFromServer)
         
         try:
-            # use product from config file
-            product = {'name': self._config['product']['name'],
-                       'id': self._config['product']['id']};
-            products.append(product)
             
-            # get products from the API
-            # products = self.sprintlyAPICall('products.json')
-            # if not products:
-            #   raise SprintlyException('Unable to get product list.')
+            if not userId:
+                print '\033[91m'
+                print 'No valid user selected. (user: "' + str(userId) + '")'
+                print '\033[0m'
+                return None
             
             # iterate over products
             for product in products:
@@ -887,6 +898,23 @@ class SprintlyTool:
             print '\033[0m'
             return None
 
+    def getSprintlyProducts(self, fromServer=False):
+        """
+        Get array of sprintly products. By default, just grabs locally from
+        config file.
+        """
+        products = []
+        # get products from the API
+        if fromServer:
+            products = self.sprintlyAPICall('products.json')
+            if not products:
+              raise SprintlyException('Unable to get product list.')
+        else:
+            # copy product from config file
+            product = {'name': self._config['product']['name'],
+                       'id': self._config['product']['id']};
+            products.append(product)
+        return products
 
     def getUserByEmail(self, email):
         """ Gets a single user id using the email string as the
