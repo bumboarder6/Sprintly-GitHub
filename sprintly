@@ -669,7 +669,10 @@ class SprintlyTool:
                 productNotInTree = not product['id'] in statusTree[item['status']]
                 itemInTree = item['number'] in prevIds
                 itemNotInTree = not itemInTree
-                if itemNotInTree and yourTask:
+                parentItem = 'children' in item
+                notParentItem = not parentItem
+                myTaskNotInTree = itemNotInTree and yourTask
+                if notParentItem or myTaskNotInTree:
                     # Straight forward, just add to status of parent
                     if productNotInTree:
                         statusTree[item['status']][product['id']] = [item]
@@ -681,7 +684,6 @@ class SprintlyTool:
                     # then the relavent status is the one of the subtasks that
                     # /are/ assigned to you. If this task is already in the tree,
                     # then the relavent status is that of a child.
-                    parentItem = 'children' in item
                     diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
                     if diffChildStatus:
                         children = item['children']
@@ -691,7 +693,7 @@ class SprintlyTool:
                         statusTree[first_child['status']][product['id']].append(item)
                         prevIds.append(item['number'])
                     else:
-                        if itemNotInTree:
+                        if productNotInTree:
                             statusTree[item['status']][product['id']] = [item]
                         else:
                             statusTree[item['status']][product['id']].append(item)
