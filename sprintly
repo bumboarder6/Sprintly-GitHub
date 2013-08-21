@@ -293,7 +293,8 @@ class SprintlyTool:
 
         if args.user:
             userID = self.getUserByEmail(args.user)
-            updates.append(('assigned_to', userID))
+            if userID:
+                updates.append(('assigned_to', userID))
 
         if args.description:
             description = messageFromEditor('Description')
@@ -752,11 +753,13 @@ class SprintlyTool:
         also retrieve for other users when given a user ID.
         """
         
+        if userId:
+            userId = self.getUserByEmail(userId)
+
+        # don't make else
         if not userId:
             userId = self._config['id']
-        else:
-            userId = self.getUserByEmail(userId)
-        
+                    
         l_products = self._getSprintlyItemsCore(userId, limit=limit)
         if listCompletedItems:
             t_data = self._getSprintlyItemsCore(userId, status='completed', limit=limit, assoc=True)
@@ -897,12 +900,12 @@ class SprintlyTool:
             if re.search(email, str(data['email']), re.I | re.S):
                 acceptable.append((userID, data))
 
+        valid = []
         if len(acceptable) == 1:
             return acceptable[0][0]
 
         elif len(acceptable) > 1:
             self.cprint('${BRIGHT_YELLOW}Multiple users exist for that re please select an ID from below:${RESET}')
-            valid = []
             for user in acceptable:
                 valid.append(str(user[0]))
                 printUser = '${NORMAL}  ' + str(user[0]) + ': ${BOLD}${LIGHT_BLUE}' + user[1]['first_name'] + ' ' + user[1]['last_name'] + ' ${NORMAL}${GREY}(' + user[1]['email'] + ')'
@@ -916,8 +919,23 @@ class SprintlyTool:
             return int(uid)
 
         else:
-            return None
+            self.cprint('${BRIGHT_YELLOW}No users exist for that re please select an ID from below or -1 for no user:${RESET}')
             
+            for user in users.items():
+                valid.append(str(user[0]))
+                printUser = '${NORMAL}  ' + str(user[0]) + ': ${BOLD}${LIGHT_BLUE}' + user[1]['first_name'] + ' ' + user[1]['last_name'] + ' ${NORMAL}${GREY}(' + user[1]['email'] + ')'
+                self.cprint(printUser)
+
+            valid.append('-1')
+            uid = raw_input(self.render('${BRIGHT_YELLOW}Which User ID:${RESET} ', trim=False))
+            
+            while uid not in :
+                uid = raw_input('Please enter a valid user ID from above: ')
+
+            if uid == '-1':
+                return None
+            return int(uid)
+                        
     def getSprintlyUsers(self, byProducts=False):
         """
         Get all Sprint.ly users.
