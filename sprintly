@@ -214,7 +214,7 @@ class SprintlyTool:
             stop_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to put in your backlog.')
             stop_p.add_argument('-c', '--comment', action='store_true', help='Adds a new comment to the item')
 
-            complete_p = subparsers.add_parser('stop', help='Move a task to completed.')
+            complete_p = subparsers.add_parser('complete', help='Move a task to completed.')
             complete_p.set_defaults(func=self._item_action, new=False,
                                                         remove=False,
                                                         description=False,
@@ -669,7 +669,6 @@ class SprintlyTool:
                 productNotInTree = not product['id'] in statusTree[item['status']]
                 itemInTree = item['number'] in prevIds
                 itemNotInTree = not itemInTree
-                print 'your task: ' + str(yourTask) + ' not in tree: ' + str(itemNotInTree) + ' status: ' + item['status']
                 if itemNotInTree and yourTask:
                     # Straight forward, just add to status of parent
                     if productNotInTree:
