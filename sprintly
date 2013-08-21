@@ -382,7 +382,7 @@ class SprintlyTool:
         ))
         if len(item['description']):
             self.cprint('${UNDERLINE}${MAGENTA}Description:${RESET}${DEFAULT}')
-            self.cprint('\t' + item['description'] + '\n')
+            self.cprint('\t' + item['description'] + '\n', trim=False)
         
         if item['type'] == 'story':
             children = self.sprintlyAPICall('/products/' + pid + '/items/' + itemID + '/children.json')
@@ -396,7 +396,7 @@ class SprintlyTool:
             self.cprint('${UNDERLINE}${MAGENTA}Comments:${RESET}${DEFAULT}')
             for comment in comments:
                 name = comment['created_by']['first_name'] + ' ' + comment['created_by']['last_name']
-                self.cprint('${DIM}%s${RESET}: %s' % (name, comment['body']))
+                self.cprint('${DIM}%s${RESET}: %s' % (name, comment['body']), trim=False)
 
 
     def install(self, update):
