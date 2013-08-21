@@ -238,16 +238,22 @@ class SprintlyTool:
         if args.parent:
             updates.append(('parent', args.parent))
 
+        if args.comment:
+            if self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/comments.json', [('body', args.comment)]):
+                print 'Successfully Commented'
+            else:
+                print 'Failed to comment check internet connection'
+            return
+
+
         self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json', updates)
 
         item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
 
         color = ITEM_COLORS.get(item['type'])
         
-        printItem = '''${%s} #%d${DEFAULT} (%s):${BOLD} %s${RESET}
-Assigned To: ${BOLD}%s${RESET}
-Score: ${BOLD}%s${RESET}
-    '''
+        printItem = '''${%s}#%d${DEFAULT} (%s):${BOLD} %s${RESET}\n\tAssigned To: ${BOLD}%s${RESET}\n\tScore: ${BOLD}%s${RESET}\n'''
+
         if not item['assigned_to']:
             assigned_to = 'Unassigned'
         else:
@@ -259,7 +265,7 @@ Score: ${BOLD}%s${RESET}
         ))
         if len(item['description']):
             self.cprint('${UNDERLINE}${MAGENTA}Description:${RESET}${DEFAULT}')
-            self.cprint(item['description'] + '\n')
+            self.cprint('\t' + item['description'] + '\n')
         
         if item['type'] == 'story':
             children = self.sprintlyAPICall('/products/' + pid + '/items/' + itemID + '/children.json')
