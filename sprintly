@@ -768,8 +768,6 @@ class SprintlyTool:
                             attr = None
                             childColor = ITEM_COLORS.get(child['type'])
                             title = child['title']
-                            if child['status'] == 'in-progress':
-                                title = u'${GREEN}⧁ ${%s}%s' % (title_color, title)
 
                             if not child['assigned_to']:
                                 assigned_to = '(Unassigned)'
