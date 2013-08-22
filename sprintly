@@ -784,8 +784,6 @@ class SprintlyTool:
         # don't make else
         if not userId:
             userId = self._config['id']
-        else:
-            userId = self.getUserByEmail(userId)
         
         products = self.getSprintlyProducts(getProductsFromServer)
         t_data = []
@@ -844,6 +842,7 @@ class SprintlyTool:
                 items = []
                 offset = 0
                 while True:
+                    
                     itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + status + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
 
                     # if we get nothing, an empty list, an error, quit
