@@ -99,7 +99,6 @@ class SprintlyTool:
         # Set up terminal
         if os.name != 'nt': locale.setlocale(locale.LC_ALL, '')
         self._encoding = locale.getpreferredencoding()
-        
 
         self._term = term_stream or sys.__stdout__
         self._is_tty = False
