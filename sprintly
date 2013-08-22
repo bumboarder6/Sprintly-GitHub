@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import sys, os, locale, urllib, urllib2, json, subprocess, re, string, logging, os, tempfile
+import sys, os, locale, urllib, urllib2, json, subprocess, re, string, logging, os, tempfile, traceback
 from curses import setupterm, tigetstr, tigetnum, tparm
 from time import time
 from argparse import ArgumentParser
@@ -171,13 +171,13 @@ class SprintlyTool:
 
             items_p = subparsers.add_parser('items', help='Lists your items by default')
             items_p.set_defaults(func=self._items_action)
-            items_p.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email')
             items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-s', '--someday', action='store_true', help='List someday (or triage) tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not show backlog items.')
             
             items_p_arg_group = items_p.add_mutually_exclusive_group()
-            items_p_arg_group.add_argument('-l', '--list', action='store_true', help='List items.')
+            items_p_arg_group.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email.')
+            items_p_arg_group.add_argument('-z', '--unassigned', action='store_true', help='Specify that unassigned items should be listed.')
             
             item_p = subparsers.add_parser('item', help='Display Item Specifics or Edit an item')
             item_p.set_defaults(func=self._item_action, new=False)
@@ -260,14 +260,17 @@ class SprintlyTool:
 
     def _items_action(self, args=None):
         if args:
-            #default is to list items
+            if args.unassigned:
+                args.user = None
+            elif args.user is None:
+                args.user = self._this_user()
             self.listSprintlyItems(args.user, not args.omit_backlog,
                                    args.completed, args.someday
                                    )
             return
         
         # default action, list this user's items:
-        self.listSprintlyItems()
+        self.listSprintlyItems(self._this_user())
 
     def _item_action(self, args):
         pid = str(self._config['product']['id'])
@@ -665,7 +668,7 @@ class SprintlyTool:
         Lists all items for the current user from the Sprint.ly API.
         """
         data = self.getSprintlyItems(userId, listBacklogItems, listCompletedItems,
-                                    listSomedayItems, False, 1000)
+                                    listSomedayItems, False, limit=2000)
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True):
@@ -769,7 +772,7 @@ class SprintlyTool:
                                 title = u'${GREEN}⧁ ${%s}%s' % (title_color, title)
 
                             if not child['assigned_to']:
-                                assigned_to = 'Unassigned'
+                                assigned_to = '(Unassigned)'
                             else:
                                 assigned_to = '(' + child['assigned_to']['first_name'] + ' ' + child['assigned_to']['last_name'] + ')'
 
@@ -790,13 +793,14 @@ class SprintlyTool:
         
         if userId:
             userId = self.getUserByEmail(userId)
-
-        # don't make else
-        if not userId:
-            userId = self._config['id']
         
         products = self.getSprintlyProducts(getProductsFromServer)
         t_data = []
+        
+        if not userId:
+            print '\033[91m'
+            print 'No user selected. Showing unassigned. (user: "' + str(userId) + '")'
+            print '\033[0m'
         
         t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',
                                                  limit=limit, assoc=True,
@@ -848,11 +852,9 @@ class SprintlyTool:
         
         try:
             
+            assigned_to = '&assigned_to=' + str(userId)
             if not userId:
-                print '\033[91m'
-                print 'No valid user selected. (user: "' + str(userId) + '")'
-                print '\033[0m'
-                return None
+                assigned_to = '&assigned_to=0'
             
             # iterate over products
             for product in products:
@@ -864,7 +866,7 @@ class SprintlyTool:
                 offset = 0
                 while True:
                     
-                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + status + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
+                    itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?children=1' + assigned_to + status + '&limit=' + str(limit) + '&offset=' + str(offset))
 
                     # if we get nothing, an empty list, an error, quit
                     if not itemsPartial or len(itemsPartial) == 0 or 'code' in itemsPartial:
@@ -929,7 +931,7 @@ class SprintlyTool:
                             parent['children'] = [item]
                             parentMapping[parentNumber] = parent
                             itemsTree.append(parent)
-
+                
                 # sort items by (status, then first child, if it exists, else number)
                 itemsTree.sort(key=lambda item: item['children'][0]['number'] if 'children' in item else item['number'], reverse=True)
                 product['items'] = itemsTree
@@ -945,6 +947,7 @@ class SprintlyTool:
             print '\033[91m'
             print 'Unable to get sprintly data. (exception: ' + str(ex) + ')'
             print '\033[0m'
+            traceback.print_exc()
             return None
 
     def getSprintlyProducts(self, fromServer=False):
