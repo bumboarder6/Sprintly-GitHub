@@ -114,7 +114,7 @@ class SprintlyTool:
                     self._cols = tigetnum('cols')
                 else:
                     self._has_color = True
-                    self._cols = _get_terminal_size_windows()[0]
+                    self._cols = _get_terminal_size_windows()[0] - 1
                 
                 self._is_tty = True
             except:
