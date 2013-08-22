@@ -173,6 +173,7 @@ class SprintlyTool:
             items_p.set_defaults(func=self._items_action)
             items_p.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email')
             items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
+            items_p.add_argument('-s', '--someday', action='store_true', help='List someday (or triage) tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not show backlog items.')
             
             items_p_arg_group = items_p.add_mutually_exclusive_group()
@@ -260,7 +261,9 @@ class SprintlyTool:
     def _items_action(self, args=None):
         if args:
             #default is to list items
-            self.listSprintlyItems(args.user, not args.omit_backlog, args.completed)
+            self.listSprintlyItems(args.user, not args.omit_backlog,
+                                   args.completed, args.someday
+                                   )
             return
         
         # default action, list this user's items:
@@ -653,11 +656,13 @@ class SprintlyTool:
             self.cprint(printUser)
         self.cprint('')
 
-    def listSprintlyItems(self, userId = None, listBacklogItems=True, listCompletedItems=False):
+    def listSprintlyItems(self, userId = None, listBacklogItems=True,
+                          listCompletedItems=False, listSomedayItems=False):
         """
         Lists all items for the current user from the Sprint.ly API.
         """
-        data = self.getSprintlyItems(userId, listBacklogItems, listCompletedItems, False, 1000)
+        data = self.getSprintlyItems(userId, listBacklogItems, listCompletedItems,
+                                    listSomedayItems, False, 1000)
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True):
@@ -772,7 +777,9 @@ class SprintlyTool:
 
             self.cprint('')
 
-    def getSprintlyItems(self, userId=None, listBacklogItems=True, listCompletedItems=False, getProductsFromServer=False, limit=100):
+    def getSprintlyItems(self, userId=None, listBacklogItems=True,
+                         listCompletedItems=False, listSomedayItems=False,
+                         getProductsFromServer=False, limit=100):
         """
         Get all Sprint.ly items. By default gets them for local user, but can
         also retrieve for other users when given a user ID.
@@ -790,13 +797,24 @@ class SprintlyTool:
         products = self.getSprintlyProducts(getProductsFromServer)
         t_data = []
         
-        t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+        t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',
+                                                 limit=limit, assoc=True,
+                                                 getProductsFromServer=getProductsFromServer))
         
         if listBacklogItems:
-            t_data.append(self._getSprintlyItemsCore(userId, status='backlog',limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+            t_data.append(self._getSprintlyItemsCore(userId, status='backlog',
+                                                     limit=limit, assoc=True,
+                                                     getProductsFromServer=getProductsFromServer))
         
         if listCompletedItems:
-            t_data.append(self._getSprintlyItemsCore(userId, status='completed', limit=limit, assoc=True, getProductsFromServer=getProductsFromServer))
+            t_data.append(self._getSprintlyItemsCore(userId, status='completed',
+                                                     limit=limit, assoc=True,
+                                                     getProductsFromServer=getProductsFromServer))
+        
+        if listSomedayItems:
+            t_data.append(self._getSprintlyItemsCore(userId, status='someday',
+                                                     limit=limit, assoc=True,
+                                                     getProductsFromServer=getProductsFromServer))
         
         for product in products:
             for data in t_data:
