@@ -275,6 +275,9 @@ class SprintlyTool:
         if args.itemID:
             itemID = str(args.itemID)
             item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
+            if item.get('code') and item['code'] != 200:
+                self.cprint('This Item doesnt appear to exist')
+                return
         else:
             itemID = None
             item = None
@@ -791,8 +794,6 @@ class SprintlyTool:
         # don't make else
         if not userId:
             userId = self._config['id']
-        else:
-            userId = self.getUserByEmail(userId)
         
         products = self.getSprintlyProducts(getProductsFromServer)
         t_data = []
@@ -862,6 +863,7 @@ class SprintlyTool:
                 items = []
                 offset = 0
                 while True:
+                    
                     itemsPartial = self.sprintlyAPICall('products/' + productId + '/items.json?assigned_to=' + str(userId) + status + '&children=1&limit=' + str(limit) + '&offset=' + str(offset))
 
                     # if we get nothing, an empty list, an error, quit
