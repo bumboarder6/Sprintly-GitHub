@@ -272,6 +272,9 @@ class SprintlyTool:
         if args.itemID:
             itemID = str(args.itemID)
             item = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '.json')
+            if item.get('code') and item['code'] != 200:
+                self.cprint('This Item doesnt appear to exist')
+                return
         else:
             itemID = None
             item = None
