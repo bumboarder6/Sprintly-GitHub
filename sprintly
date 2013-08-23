@@ -812,6 +812,10 @@ class SprintlyTool:
         def filterList(item):
             if pat.search(item['title'], FUZ) or pat.search(item['description'], FUZ):
                 return True
+            if item.get('children'):
+                for cItem in item['children']:
+                    if pat.search(cItem['title'], FUZ) or pat.search(cItem['description'], FUZ):
+                        return True
             return False
         
         t_data.append(self._getSprintlyItemsCore(None, status='in-progress', assoc=True, getProductsFromServer=fromServer, listAll=True))
