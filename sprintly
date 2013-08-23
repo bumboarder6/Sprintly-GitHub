@@ -8,6 +8,13 @@ from argparse import ArgumentParser
 from subprocess import call
 if os.name == 'nt': import ctypes, struct
 
+try:
+    import tre
+    FUZ = tre.Fuzzyness(maxerr = 1)
+except ImportError:
+    FUZ = None
+    print 'Fuzzy regex not available, search will not work'
+
 # force utf-8 encoding
 reload(sys)
 sys.setdefaultencoding('utf-8')
@@ -20,7 +27,7 @@ logger = logging.getLogger(__name__)
 # constants
 CONFIG_VERSION = '2.1'
 SPRINTLY_NAME = 'sprintly'
-SPRINTLY_DIR = '/usr/local/bin/' if os.name != 'nt' else os.environ["PYTHONHOME"]+'/Scripts/'
+SPRINTLY_DIR = '/usr/local/bin/' if os.name != 'nt' else os.environ.get("PYTHONHOME") + '/Scripts/'
 SPRINTLY_SOURCE_URL = 'https://raw.github.com/bumboarder6/Sprintly-GitHub/master/sprintly'
 
 # non-editable constants
@@ -174,6 +181,16 @@ class SprintlyTool:
             items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-s', '--someday', action='store_true', help='List someday (or triage) tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not show backlog items.')
+
+            search_p = subparsers.add_parser('search', help='Search for matching items')
+            search_p.set_defaults(func=self._search_action)
+            search_p.add_argument('query', metavar='query', type=str, help='The regular expression to search sprintly items for')
+            search_p.add_argument('-c', '--completed', action='store_true', help='Search completed tasks as well. Default is to only search backlog/in-progress')
+            search_p.add_argument('-s', '--someday', action='store_true', help='Search someday (or triage) tasks as well. Default is to only search backlog/in-progress')
+            search_p.add_argument('-b', '--omit-backlog', dest='backlog', action='store_true', help='Do not search backlog items.')
+            search_p.add_argument('-a', '--search-all', dest='searchAll', action='store_true', help='Shortcut for -c -s')
+            search_p.add_argument('-m', '--search-comments', dest='searchComments', action='store_true', help='Optionally comment fields')
+
             
             items_p_arg_group = items_p.add_mutually_exclusive_group()
             items_p_arg_group.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email.')
@@ -271,6 +288,9 @@ class SprintlyTool:
         
         # default action, list this user's items:
         self.listSprintlyItems(self._this_user())
+
+    def _search_action(self, args):
+        self.searchSprintlyItems(args.query, args.backlog, args.completed, args.someday, False, args.searchAll, args.searchComments)
 
     def _item_action(self, args):
         pid = str(self._config['product']['id'])
@@ -781,6 +801,43 @@ class SprintlyTool:
 
             self.cprint('')
 
+
+    def searchSprintlyItems(self, query, backlog=True, completed=False, someday=False, fromServer=False, searchAny=False, searchComments=False):
+        """ Searches sprintly for items that match in the description or title
+            TODO Optionally will search comments as well for results
+        """
+        products = self.getSprintlyProducts(fromServer)
+        t_data = []
+        pat = tre.compile(query, tre.EXTENDED | tre.ICASE)
+        def filterList(item):
+            if pat.search(item['title'], FUZ) or pat.search(item['description'], FUZ):
+                return True
+            return False
+        
+        t_data.append(self._getSprintlyItemsCore(None, status='in-progress', assoc=True, getProductsFromServer=fromServer, listAll=True))
+
+        if backlog or searchAny:
+            t_data.append(self._getSprintlyItemsCore(None, status='backlog', assoc=True, getProductsFromServer=fromServer, listAll=True))
+
+        if completed or searchAny:
+            t_data.append(self._getSprintlyItemsCore(None, status='completed', assoc=True, getProductsFromServer=fromServer, listAll=True))
+
+        if someday or searchAny:
+            t_data.append(self._getSprintlyItemsCore(None, status='someday', assoc=True, getProductsFromServer=fromServer, listAll=True))
+
+        for product in products:
+            if 'items' not in product:
+                product['items'] = []
+                
+        for product in products:
+            for data in t_data:
+                if not data or not str(product['id']) in data:
+                    continue
+                product['items'] = product['items'] + filter(filterList, data[str(product['id'])]['items'])
+
+        self.printItems(products)
+                    
+            
     def getSprintlyItems(self, userId=None, listBacklogItems=True,
                          listCompletedItems=False, listSomedayItems=False,
                          getProductsFromServer=False, limit=100):
@@ -828,7 +885,7 @@ class SprintlyTool:
                         product['items'] = product['items'] + data[str(product['id'])]['items']
         return products
 
-    def _getSprintlyItemsCore(self, userId=None, status=None, limit=100, getProductsFromServer=False, assoc=False):
+    def _getSprintlyItemsCore(self, userId=None, status=None, limit=100, getProductsFromServer=False, assoc=False, listAll=False):
         """
         Get Sprint.ly items. By default, just in-progress and backlog items are
         listed. Specify a status to limit to that status. pass assoc=True to 
@@ -849,10 +906,11 @@ class SprintlyTool:
         products = self.getSprintlyProducts(getProductsFromServer)
         
         try:
-            
-            assigned_to = '&assigned_to=' + str(userId)
-            if not userId:
-                assigned_to = '&assigned_to=0'
+            assigned_to = ''
+            if not listAll:
+                assigned_to = '&assigned_to=' + str(userId)
+                if not userId:
+                    assigned_to = '&assigned_to=0'
             
             # iterate over products
             for product in products:
