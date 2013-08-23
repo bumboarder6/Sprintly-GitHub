@@ -393,7 +393,7 @@ class SprintlyTool:
 
         self.cprint(printItem % (
             color, item['number'], ITEM_STATUSES[item['status']], item['title']
-        ))
+        ), trim=False)
         self.cprint(printAssignedTo % (
             assigned_to, ITEM_SCORES[item['score']]
         ))
