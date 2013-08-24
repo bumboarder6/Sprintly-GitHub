@@ -10,7 +10,9 @@ if os.name == 'nt': import ctypes, struct
 
 try:
     import tre
-    FUZ = tre.Fuzzyness(maxerr = 1)
+    FUZ0 = tre.Fuzzyness(maxerr = 0)
+    FUZ1 = tre.Fuzzyness(maxerr = 1)
+    FUZ2 = tre.Fuzzyness(maxerr = 2)
 except ImportError:
     FUZ = None
     print 'Fuzzy regex not available, search will not work'
@@ -91,6 +93,23 @@ def messageFromEditor(usage, replace=False):
     os.remove(name)
     return re.sub('^\s*#.*?$', '', data, flags=re.M | re.I).strip()
 
+
+def getHighlightedStr(data, regex):
+    """ Highlights the matches of the pattern in the string by
+        coloring them bright green then it returns the string,
+        assumes regex is a (pattern, and fuz object)"""
+    pat = regex[0]
+    fuz = regex[1]
+    new_data = ''
+    match = pat.search(data, fuz)
+    while match:
+        group = match.groups()[0]
+        new_data += data[:group[0]] + '${GREEN}' + data[group[0]:group[1]] + '${DEFAULT}'
+        data = data[group[1]:]
+        match = pat.search(data, fuz)
+
+    return new_data + data
+    
 
 class SprintlyTool:
     """
@@ -691,7 +710,7 @@ class SprintlyTool:
                                     listSomedayItems, False, limit=2000)
         self.printItems(data)
 
-    def printItems(self, products, shouldPrintHeader=True):
+    def printItems(self, products, shouldPrintHeader=True, regex=None):
         """
         Print a list of Sprint.ly items.
         """
@@ -766,7 +785,6 @@ class SprintlyTool:
                     printProduct = '${DEFAULT}Product: ${BOLD}${BRIGHT_BLUE}' + name + '${NORMAL}${GREY} (https://sprint.ly/product/' + productId + '/)'
                     self.cprint(printProduct)
 
-                title_color = 'DEFAULT'
                 for item in items:
                     if not item['assigned_to']:
                         assigned_to = '(Unassigned)'
@@ -778,8 +796,12 @@ class SprintlyTool:
                         attr = DIM
                     color = ITEM_COLORS.get(item['type'])
 
-                    printItem = '${%s}%-6s${DEFAULT}     %18s:  ${%s}%s' % (
-                        color, '#' + str(item['number']), assigned_to, title_color, item['title']
+                    title = item['title']
+                    if regex:
+                        title = getHighlightedStr(title, regex)
+                    
+                    printItem = '${%s}%-6s${DEFAULT}     %18s:  ${DEFAULT}%s' % (
+                        color, '#' + str(item['number']), assigned_to, title
                     )
                     self.cprint(printItem, attr=attr)
 
@@ -788,14 +810,16 @@ class SprintlyTool:
                             attr = None
                             childColor = ITEM_COLORS.get(child['type'])
                             title = child['title']
-
+                            if regex:
+                                title = getHighlightedStr(title, regex)
+                            
                             if not child['assigned_to']:
                                 assigned_to = '(Unassigned)'
                             else:
                                 assigned_to = '(' + child['assigned_to']['first_name'] + ' ' + child['assigned_to']['last_name'] + ')'
 
-                            printChild = u'${%s}   %-6s${DEFAULT}  %18s:  ${%s}%s' % (
-                                childColor, '#' + str(child['number']), assigned_to, title_color, title
+                            printChild = u'${%s}   %-6s${DEFAULT}  %18s:  ${DEFAULT}%s' % (
+                                childColor, '#' + str(child['number']), assigned_to, title
                             )
                             self.cprint(printChild, attr=attr)
 
@@ -808,13 +832,22 @@ class SprintlyTool:
         """
         products = self.getSprintlyProducts(fromServer)
         t_data = []
+        
         pat = tre.compile(query, tre.EXTENDED | tre.ICASE)
+        fuz = None
+        if len(query) < 4:
+            fuz = FUZ0
+        elif len(query) < 8:
+            fuz = FUZ1
+        else:
+            fuz = FUZ2
+        
         def filterList(item):
-            if pat.search(item['title'], FUZ) or pat.search(item['description'], FUZ):
+            if pat.search(item['title'], fuz) or pat.search(item['description'], fuz):
                 return True
             if item.get('children'):
                 for cItem in item['children']:
-                    if pat.search(cItem['title'], FUZ) or pat.search(cItem['description'], FUZ):
+                    if pat.search(cItem['title'], fuz) or pat.search(cItem['description'], fuz):
                         return True
             return False
         
@@ -839,7 +872,7 @@ class SprintlyTool:
                     continue
                 product['items'] = product['items'] + filter(filterList, data[str(product['id'])]['items'])
 
-        self.printItems(products)
+        self.printItems(products, regex=(pat, fuz))
                     
             
     def getSprintlyItems(self, userId=None, listBacklogItems=True,
