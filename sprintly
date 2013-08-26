@@ -464,6 +464,21 @@ class SprintlyTool:
         exists with the same name, user will be prompted to replace the file.
         """
 
+        print 'Grabbing TRE fuzzy regex package...'
+        
+        call(['wget', 'http://laurikari.net/tre/tre-0.8.0.tar.gz'])
+        call(['wget', 'https://raw.github.com/laurikari/tre/master/python/tre-python.c'])
+        call(['tar', '-xzvf', 'tre-0.8.0.tar.gz'])
+        call(['mv', 'tre-python.c', './tre-0.8.0/python/'])
+        os.chdir('./tre-0.8.0')
+        call('./configure')
+        call('make')
+        call(['sudo', 'make', 'install'])
+        os.chdir('./python')
+        call(['sudo', 'python', 'setup.py', 'install'])
+        os.chdir('../../')
+        call(['sudo', 'rm', '-rf', './tre-0.8.0'])
+
         print 'Downloading latest version of sprintly from GitHub...'
 
         # get the file
