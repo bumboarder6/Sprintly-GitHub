@@ -200,6 +200,12 @@ class SprintlyTool:
             items_p.add_argument('-c', '--completed', action='store_true', help='List completed tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-s', '--someday', action='store_true', help='List someday (or triage) tasks as well. Default is to only list backlog/in-progress')
             items_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not show backlog items.')
+            items_p.add_argument('-i', '--omit-in-progress', dest='omit_in_progress', action='store_true', help='Do not show in-progress items.')
+
+            items_p_arg_group = items_p.add_mutually_exclusive_group()
+            items_p_arg_group.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email.')
+            items_p_arg_group.add_argument('-z', '--unassigned', action='store_true', help='Specify that only unassigned items should be listed.')
+            items_p_arg_group.add_argument('-y', '--anyone', action='store_true', help='Specify that items assigned to anyone should be listed.')
 
             search_p = subparsers.add_parser('search', help='Search for matching items')
             search_p.set_defaults(func=self._search_action)
@@ -209,11 +215,6 @@ class SprintlyTool:
             search_p.add_argument('-b', '--omit-backlog', dest='backlog', action='store_true', help='Do not search backlog items.')
             search_p.add_argument('-a', '--search-all', dest='searchAll', action='store_true', help='Shortcut for -c -s')
             search_p.add_argument('-m', '--search-comments', dest='searchComments', action='store_true', help='Optionally comment fields')
-
-            
-            items_p_arg_group = items_p.add_mutually_exclusive_group()
-            items_p_arg_group.add_argument('-u', '--user', default=None, help='Specify a user. Defaults to you. Matches against email.')
-            items_p_arg_group.add_argument('-z', '--unassigned', action='store_true', help='Specify that unassigned items should be listed.')
             
             item_p = subparsers.add_parser('item', help='Display Item Specifics or Edit an item')
             item_p.set_defaults(func=self._item_action, new=False)
@@ -300,8 +301,8 @@ class SprintlyTool:
             elif args.user is None:
                 args.user = self._this_user()
             self.listSprintlyItems(args.user, not args.omit_backlog,
-                                   args.completed, args.someday
-                                   )
+                                   not args.omit_in_progress, args.completed,
+                                   args.someday, args.anyone)
             return
         
         # default action, list this user's items:
@@ -703,12 +704,15 @@ class SprintlyTool:
         self.cprint('')
 
     def listSprintlyItems(self, userId = None, listBacklogItems=True,
-                          listCompletedItems=False, listSomedayItems=False):
+                          listInProgress=True, listCompletedItems=False,
+                          listSomedayItems=False, listAll=False):
         """
         Lists all items for the current user from the Sprint.ly API.
+        listAll refers to all users, not all statuses.
         """
-        data = self.getSprintlyItems(userId, listBacklogItems, listCompletedItems,
-                                    listSomedayItems, False, limit=2000)
+        data = self.getSprintlyItems(userId, listBacklogItems, listInProgress,
+                                    listCompletedItems, listSomedayItems, False,
+                                    limit=2000, listAll=listAll)
         self.printItems(data)
 
     def printItems(self, products, shouldPrintHeader=True, regex=None):
@@ -729,46 +733,29 @@ class SprintlyTool:
         order = ['accepted', 'someday', 'completed', 'backlog', 'in-progress']
 
         for product in products:
-            prevIds = []
             if 'items' in product:
                 for item in product['items']:
-                    # If the item is already in the list or is assigned to someone
-                    # else, it could mean this entry contains children with a
-                    # different status:
-                    notUnassigned = 'assigned_to' in item and item['assigned_to'] != None
-                    yourTask = notUnassigned and item['assigned_to']['id'] == self._this_user()
+                    # If the item has children, place it under child status
+                    # instead of parent status. The parent will be listed under
+                    # its own status along with any children w/ same status
                     productNotInTree = not product['id'] in statusTree[item['status']]
-                    itemInTree = item['number'] in prevIds
-                    itemNotInTree = not itemInTree
                     parentItem = 'children' in item
                     notParentItem = not parentItem
-                    myTaskNotInTree = itemNotInTree and yourTask
-                    if notParentItem or myTaskNotInTree:
+                    if notParentItem:
                         # Straight forward, just add to status of parent
                         if productNotInTree:
                             statusTree[item['status']][product['id']] = [item]
                         else:
                             statusTree[item['status']][product['id']].append(item)
-                        prevIds.append(item['number'])
                     else:
-                        # Either not your task or already in tree. If not your task,
-                        # then the relavent status is the one of the subtasks that
-                        # /are/ assigned to you. If this task is already in the tree,
-                        # then the relavent status is that of a child.
-                        diffChildStatus = parentItem and item['children'][0]['status'] != item['status']
-                        if diffChildStatus:
-                            children = item['children']
-                            first_child = children[0]
-                            if not product['id'] in statusTree[first_child['status']]:
-                                statusTree[first_child['status']][product['id']] = []
-                            statusTree[first_child['status']][product['id']].append(item)
-                            prevIds.append(item['number'])
-                        else:
-                            if productNotInTree:
-                                statusTree[item['status']][product['id']] = [item]
-                            else:
-                                statusTree[item['status']][product['id']].append(item)
-                            prevIds.append(item['number'])
+                        # If it has children, it should be placed under the
+                        # status of the children.
+                        children = item['children']
+                        first_child = children[0]
+                        childStatus = first_child['status']
+                        if not product['id'] in statusTree[childStatus]:
+                            statusTree[childStatus][product['id']] = []
+                        statusTree[childStatus][product['id']].append(item)
 
         for key in order:
             status = statusTree[key]
@@ -876,12 +863,13 @@ class SprintlyTool:
         self.printItems(products, regex=(pat, fuz))
                     
             
-    def getSprintlyItems(self, userId=None, listBacklogItems=True,
+    def getSprintlyItems(self, userId=None, listBacklogItems=True, listInProgress=True,
                          listCompletedItems=False, listSomedayItems=False,
-                         getProductsFromServer=False, limit=100):
+                         getProductsFromServer=False, limit=100, listAll=False):
         """
         Get all Sprint.ly items. By default gets them for local user, but can
         also retrieve for other users when given a user ID.
+        listAll refers to all users, not all statuses.
         """
         
         if userId:
@@ -895,24 +883,29 @@ class SprintlyTool:
             print 'No user selected. Showing unassigned. (user: "' + str(userId) + '")'
             print '\033[0m'
         
-        t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',
-                                                 limit=limit, assoc=True,
-                                                 getProductsFromServer=getProductsFromServer))
+        if listInProgress:
+            t_data.append(self._getSprintlyItemsCore(userId, status='in-progress',
+                                                     limit=limit, assoc=True,
+                                                     getProductsFromServer=getProductsFromServer,
+                                                     listAll=listAll))
         
         if listBacklogItems:
             t_data.append(self._getSprintlyItemsCore(userId, status='backlog',
                                                      limit=limit, assoc=True,
-                                                     getProductsFromServer=getProductsFromServer))
+                                                     getProductsFromServer=getProductsFromServer,
+                                                     listAll=listAll))
         
         if listCompletedItems:
             t_data.append(self._getSprintlyItemsCore(userId, status='completed',
                                                      limit=limit, assoc=True,
-                                                     getProductsFromServer=getProductsFromServer))
+                                                     getProductsFromServer=getProductsFromServer,
+                                                     listAll=listAll))
         
         if listSomedayItems:
             t_data.append(self._getSprintlyItemsCore(userId, status='someday',
                                                      limit=limit, assoc=True,
-                                                     getProductsFromServer=getProductsFromServer))
+                                                     getProductsFromServer=getProductsFromServer,
+                                                     listAll=listAll))
         
         for product in products:
             for data in t_data:
