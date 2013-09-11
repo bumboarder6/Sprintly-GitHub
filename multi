@@ -1,0 +1,21 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+import sys, re
+from subprocess import call
+
+sys.argv = sys.argv[1:]
+print
+items = []
+for arg in sys.argv:
+    match = re.search('-\d+', arg)
+    
+    if match:
+        items.append(match.group(0))
+
+for idx, item in enumerate(items):
+    sys.argv.remove(item)
+
+for item in items:
+    cmd = ['sprintly', item]
+    cmd.extend(sys.argv)
+    call(cmd)
