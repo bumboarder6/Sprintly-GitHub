@@ -212,7 +212,7 @@ class SprintlyTool:
             search_p.add_argument('query', metavar='query', type=str, help='The regular expression to search sprintly items for')
             search_p.add_argument('-c', '--completed', action='store_true', help='Search completed tasks as well. Default is to only search backlog/in-progress')
             search_p.add_argument('-s', '--someday', action='store_true', help='Search someday (or triage) tasks as well. Default is to only search backlog/in-progress')
-            search_p.add_argument('-b', '--omit-backlog', dest='backlog', action='store_true', help='Do not search backlog items.')
+            search_p.add_argument('-b', '--omit-backlog', dest='omit_backlog', action='store_true', help='Do not search backlog items.')
             search_p.add_argument('-a', '--search-all', dest='searchAll', action='store_true', help='Shortcut for -c -s')
             search_p.add_argument('-m', '--search-comments', dest='searchComments', action='store_true', help='Optionally comment fields')
             
@@ -309,7 +309,7 @@ class SprintlyTool:
         self.listSprintlyItems(self._this_user())
 
     def _search_action(self, args):
-        self.searchSprintlyItems(args.query, args.backlog, args.completed, args.someday, False, args.searchAll, args.searchComments)
+        self.searchSprintlyItems(args.query, !args.omit_backlog, args.completed, args.someday, False, args.searchAll, args.searchComments)
 
     def _item_action(self, args):
         pid = str(self._config['product']['id'])
