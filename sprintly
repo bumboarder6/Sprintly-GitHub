@@ -309,7 +309,7 @@ class SprintlyTool:
         self.listSprintlyItems(self._this_user())
 
     def _search_action(self, args):
-        self.searchSprintlyItems(args.query, !args.omit_backlog, args.completed, args.someday, False, args.searchAll, args.searchComments)
+        self.searchSprintlyItems(args.query, not args.omit_backlog, args.completed, args.someday, False, args.searchAll, args.searchComments)
 
     def _item_action(self, args):
         pid = str(self._config['product']['id'])
