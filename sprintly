@@ -470,14 +470,17 @@ class SprintlyTool:
                                          limit=100, listAll=False)
         for product in products:
             if 'items' in product:
-                # itemNumber = item['number']
                 flat_filtered = []
+                colors = []
                 for item in product['items']:
                     if item['assigned_to']['id'] == self._this_user():
                         flat_filtered += [item['number']]
+                        colors += [ITEM_COLORS.get(item['type'])]
                     if 'children' in item:
                         flat_filtered += map(lambda x: x['number'], item['children'])
-                itemNumbers = map(lambda x: '${BOLD}${GREY}#' + str(x) + '${RESET}', flat_filtered)
+                        colors += map(lambda x: ITEM_COLORS.get(x['type']), item['children'])
+                items = zip(colors, flat_filtered)
+                itemNumbers = map(lambda x: '${BOLD}${%s}#%d${RESET}' % tuple(x), items)
                 items = ', '.join(itemNumbers)
                 self.cprint(items)
 
