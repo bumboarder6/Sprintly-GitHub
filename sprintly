@@ -262,6 +262,9 @@ class SprintlyTool:
             complete_p.add_argument('itemID', metavar='ID', type=int, help='The ID of the item to move to completed (equiv. to "sprintly item <item id> -s completed -u <your id>").')
             complete_p.add_argument('-c', '--comment', nargs='?', type=str, default=False, const=True, help='Adds a new comment to the item')
 
+            today_p = subparsers.add_parser('today', help='Show comma separated list of task numbers in progress.');
+            today_p.set_defaults(func=self._today_action);
+
             self.parser = parser
             args = parser.parse_args()
             args.func(args)
@@ -456,6 +459,27 @@ class SprintlyTool:
             for comment in comments:
                 name = comment['created_by']['first_name'] + ' ' + comment['created_by']['last_name']
                 self.cprint('${DIM}%s${RESET}: %s' % (name, comment['body']), trim=False)
+
+    def _today_action(self, args):
+        products = self.getSprintlyItems(userId=self._this_user(),
+                                         listBacklogItems=False,
+                                         listInProgress=True,
+                                         listCompletedItems=False,
+                                         listSomedayItems=False,
+                                         getProductsFromServer=False,
+                                         limit=100, listAll=False)
+        for product in products:
+            if 'items' in product:
+                # itemNumber = item['number']
+                flat_filtered = []
+                for item in product['items']:
+                    if item['assigned_to']['id'] == self._this_user():
+                        flat_filtered += [item['number']]
+                    if 'children' in item:
+                        flat_filtered += map(lambda x: x['number'], item['children'])
+                itemNumbers = map(lambda x: '${BOLD}${GREY}#' + str(x) + '${RESET}', flat_filtered)
+                items = ', '.join(itemNumbers)
+                self.cprint(items)
 
 
     def install(self, update):
@@ -882,7 +906,7 @@ class SprintlyTool:
                          listCompletedItems=False, listSomedayItems=False,
                          getProductsFromServer=False, limit=100, listAll=False):
         """
-        Get all Sprint.ly items. By default gets them for local user, but can
+        Get all Sprint.ly items. By default gets unassigned items, but can
         also retrieve for other users when given a user ID.
         listAll refers to all users, not all statuses.
         """
