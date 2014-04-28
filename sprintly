@@ -447,7 +447,7 @@ class SprintlyTool:
             self.cprint('\t' + item['description'] + '\n', trim=False)
         
         if item['type'] == 'story':
-            children = self.sprintlyAPICall('/products/' + pid + '/items/' + itemID + '/children.json')
+            children = self.sprintlyAPICall('products/' + pid + '/items/' + itemID + '/children.json')
             if len (children) > 0:
                 self.cprint('${UNDERLINE}${MAGENTA}Children:${RESET}${DEFAULT}')
                 products = [{'id': pid, 'items': children, 'name': 'Vadio'}]
