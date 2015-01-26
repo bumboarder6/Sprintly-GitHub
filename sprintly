@@ -873,11 +873,11 @@ class SprintlyTool:
             fuz = FUZ2
         
         def filterList(item):
-            if pat.search(item['title'], fuz) or pat.search(item['description'], fuz):
+            if pat.search(str(item['title']), fuz) or pat.search(str(item['description']), fuz):
                 return True
             if item.get('children'):
                 for cItem in item['children']:
-                    if pat.search(cItem['title'], fuz) or pat.search(cItem['description'], fuz):
+                    if pat.search(str(cItem['title']), fuz) or pat.search(str(cItem['description']), fuz):
                         return True
             return False
         
